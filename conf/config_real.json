@@ -1,0 +1,34 @@
+{
+    "plugins": [
+        {
+            "name": "CTP_Market_Sim",
+            "library": "./libmod_ctp.so",
+            "enabled": true,
+            "config": {
+                "symbol": "rb2410"
+            }
+        },
+        {
+            "name": "CTP_Trade_Real",
+            "library": "./libmod_ctp_real.so",
+            "enabled": true,
+            "config": {
+                "td_front": "tcp://180.168.146.187:10201",
+                "broker_id": "9999",
+                "user_id": "YOUR_USER_ID",
+                "password": "YOUR_PASSWORD",
+                "app_id": "simnow_client_test",
+                "auth_code": "0000000000000000"
+            }
+        },
+        {
+            "name": "Grid_Strategy",
+            "library": "./libmod_strategy.so",
+            "enabled": true,
+            "config": {
+                "buy_thresh": "3480.0",
+                "sell_thresh": "3520.0"
+            }
+        }
+    ]
+}

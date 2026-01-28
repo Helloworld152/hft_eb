@@ -1,0 +1,16 @@
+{
+    "modules": [
+        {
+            "name": "recorder",
+            "lib": "./libmod_recorder.so",
+            "config": {
+                "md_front": "tcp://180.168.146.187:10131",
+                "broker_id": "9999",
+                "user_id": "000001",
+                "password": "password",
+                "symbols": "rb2605,hc2605,cu2605",
+                "output_path": "./data/tick/"
+            }
+        }
+    ]
+}

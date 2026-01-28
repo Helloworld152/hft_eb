@@ -1,0 +1,12 @@
+{
+    "plugins": [
+        {
+            "name": "replay",
+            "library": "../bin/libmod_replay.so",
+            "enabled": true,
+            "config": {
+                "data_file": "../data/market_data_20260129"
+            }
+        }
+    ]
+}
