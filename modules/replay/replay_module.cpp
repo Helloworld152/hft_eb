@@ -66,7 +66,7 @@ private:
 
     void publish_tick(const TickRecord& rec) {
         // 采样打印：前5条必打，之后每50条打一次
-        if (tick_count_ < 5 || tick_count_ % 50 == 0 && strcmp(rec.symbol, "au2606") == 0) {
+        if (tick_count_ < 5 || tick_count_ % 10 == 0 && strcmp(rec.symbol, "au2606") == 0) {
             std::cout << "[Bus] #" << tick_count_ << " | " << rec.symbol
                       << " | Trading Day: " << rec.trading_day
                       << " | Update Time: " << rec.update_time

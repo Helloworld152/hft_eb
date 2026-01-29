@@ -51,8 +51,17 @@ target_link_libraries(mod_monitor PRIVATE -Wl,--no-as-needed pthread zmq -Wl,--a
 add_library(mod_replay SHARED modules/replay/replay_module.cpp)
 target_include_directories(mod_replay PRIVATE include core/include)
 
+# 9. 编译插件 H: Kline (K线合成)
+add_library(mod_kline SHARED modules/kline/kline_module.cpp)
+target_include_directories(mod_kline PRIVATE include core/include)
+
 # 7. 编译主程序
 add_executable(hft_engine src/main.cpp src/engine.cpp)
 target_include_directories(hft_engine PRIVATE include)
 target_link_libraries(hft_engine PRIVATE dl pthread)
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
+
+# 10. 编译工具: read_kline
+add_executable(read_kline tools/read_kline.cpp)
+target_include_directories(read_kline PRIVATE core/include)
+target_link_libraries(read_kline PRIVATE pthread)

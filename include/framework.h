@@ -20,6 +20,7 @@ enum EventType {
     EVENT_RTN_ORDER,       // 报单回报 (交易所状态)
     EVENT_RTN_TRADE,       // 成交回报 (交易所成交)
     EVENT_POS_UPDATE,      // 持仓更新
+    EVENT_KLINE,           // K线数据
     EVENT_LOG,             // 日志
     MAX_EVENTS
 };

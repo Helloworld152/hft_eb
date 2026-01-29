@@ -150,6 +150,12 @@ bool HftEngine::loadConfig(const std::string& config_path) {
                 for (auto& m : p["config"].GetObject()) {
                     if (m.value.IsString()) {
                         config_map[m.name.GetString()] = m.value.GetString();
+                    } else if (m.value.IsBool()) {
+                        config_map[m.name.GetString()] = m.value.GetBool() ? "true" : "false";
+                    } else if (m.value.IsInt()) {
+                        config_map[m.name.GetString()] = std::to_string(m.value.GetInt());
+                    } else if (m.value.IsDouble()) {
+                        config_map[m.name.GetString()] = std::to_string(m.value.GetDouble());
                     }
                 }
             }

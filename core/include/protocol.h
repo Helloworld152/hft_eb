@@ -29,3 +29,25 @@ struct TickRecord {
     double ask_price[5];
     int ask_volume[5];
 };
+
+enum KlineInterval {
+    K_1M = 1,
+    K_5M = 5,
+    K_15M = 15,
+    K_1H = 60,
+    K_1D = 1440
+};
+
+struct KlineRecord {
+    char symbol[32];
+    uint32_t trading_day; // 交易日 YYYYMMDD
+    uint64_t start_time;  // 周期起始时间 HHMMSSmmm
+    double open;
+    double high;
+    double low;
+    double close;
+    int volume;           // 周期内成交量增量
+    double turnover;      // 周期内成交额增量
+    double open_interest; // 周期末持仓量
+    KlineInterval interval;
+};

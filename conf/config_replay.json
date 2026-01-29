@@ -1,7 +1,7 @@
 {
     "trading_hours": {
         "start": "08:50:00",
-        "end": "15:30:00"
+        "end": "23:59:59"
     },
     "plugins": [
         {
@@ -10,6 +10,15 @@
             "enabled": true,
             "config": {
                 "data_file": "../data/market_data_20260129"
+            }
+        },
+        {
+            "name": "kline",
+            "library": "../bin/libmod_kline.so",
+            "enabled": true,
+            "config": {
+                "output_path": "../data/",
+                "debug": true
             }
         }
     ]
