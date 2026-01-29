@@ -1,4 +1,8 @@
 {
+    "trading_hours": {
+        "start": "08:50:00",
+        "end": "15:30:00"
+    },
     "plugins": [
         {
             "name": "replay",

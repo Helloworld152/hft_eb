@@ -25,8 +25,8 @@ public:
     // 启动所有插件
     void start();
 
-    // 运行主循环（阻塞，直到达到指定持续时间）
-    void run(int duration_sec);
+    // 运行主循环 (阻塞，直到收到信号或达到结束时间)
+    void run();
 
     // 停止所有插件并清理资源
     void stop();
@@ -36,4 +36,8 @@ private:
     std::unique_ptr<EventBusImpl> bus_;
     std::vector<std::shared_ptr<PluginHandle>> plugins_;
     bool is_running_;
+
+    // 自动启停时间 (格式 "HH:MM:SS")
+    std::string start_time_;
+    std::string end_time_;
 };

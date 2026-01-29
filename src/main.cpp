@@ -17,11 +17,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // 3. 启动并运行
-    // 默认运行 5 秒，或者可以修改 engine 接口支持一直运行直到信号中断
-    engine.run(5);
+    engine.run();
 
-    // 4. 停止（析构函数也会调用 stop，显式调用更清晰）
     engine.stop();
 
     return 0;

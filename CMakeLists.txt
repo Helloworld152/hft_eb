@@ -54,7 +54,5 @@ target_include_directories(mod_replay PRIVATE include core/include)
 # 7. 编译主程序
 add_executable(hft_engine src/main.cpp src/engine.cpp)
 target_include_directories(hft_engine PRIVATE include)
-# 引入项目现有的 rapidjson
-target_include_directories(hft_engine PRIVATE "${CMAKE_SOURCE_DIR}/../gateway_ctp/include") 
 target_link_libraries(hft_engine PRIVATE dl pthread)
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")

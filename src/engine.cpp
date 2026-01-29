@@ -5,9 +5,21 @@
 #include <thread>
 #include <chrono>
 #include <array>
+#include <csignal>
+#include <iomanip>
+#include <ctime>
+#include <sstream>
+#include <atomic>
 
 #include "rapidjson/document.h"
 #include "rapidjson/istreamwrapper.h"
+
+static std::atomic<bool> g_shutdown(false);
+
+void signal_handler(int signum) {
+    std::cout << "\n[System] Caught signal " << signum << ", initiating shutdown..." << std::endl;
+    g_shutdown = true;
+}
 
 // ==========================================
 // Internal Implementations
@@ -89,7 +101,19 @@ bool HftEngine::loadConfig(const std::string& config_path) {
         return false;
     }
 
-    // 2. 遍历插件列表
+    if (doc.HasMember("trading_hours") && doc["trading_hours"].IsObject()) {
+        const auto& th = doc["trading_hours"];
+        if (th.HasMember("start") && th["start"].IsString()) {
+            start_time_ = th["start"].GetString();
+        }
+        if (th.HasMember("end") && th["end"].IsString()) {
+            end_time_ = th["end"].GetString();
+        }
+        std::cout << "[Config] Trading Hours: " 
+                  << (start_time_.empty() ? "Any" : start_time_) << " - " 
+                  << (end_time_.empty() ? "Any" : end_time_) << std::endl;
+    }
+
     if (doc.HasMember("plugins") && doc["plugins"].IsArray()) {
         const auto& plugin_list = doc["plugins"];
         
@@ -161,13 +185,34 @@ void HftEngine::start() {
     is_running_ = true;
 }
 
-void HftEngine::run(int duration_sec) {
+void HftEngine::run() {
+    std::signal(SIGINT, signal_handler);
+    std::signal(SIGTERM, signal_handler);
+
     if (!is_running_) {
         start();
     }
     
-    std::cout << ">>> System Running. (Simulating " << duration_sec << "s run...)" << std::endl;
-    std::this_thread::sleep_for(std::chrono::seconds(duration_sec));
+    std::cout << ">>> System Running. Waiting for signal or end time..." << std::endl;
+
+    while (!g_shutdown) {
+        if (!end_time_.empty()) {
+             auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+             std::tm local_tm = *std::localtime(&now);
+             std::ostringstream oss;
+             oss << std::put_time(&local_tm, "%H:%M:%S");
+             std::string current_time = oss.str();
+
+             if (current_time >= end_time_) {
+                 std::cout << "[System] Reached end time " << end_time_ << ". Stopping." << std::endl;
+                 break;
+             }
+        }
+        
+        std::this_thread::sleep_for(std::chrono::seconds(60));
+    }
+
+    stop();
 }
 
 void HftEngine::stop() {

@@ -3,6 +3,10 @@ set -e
 
 # 创建构建目录 (build for intermediate files)
 BUILD_DIR="build"
+
+if [ -d "$BUILD_DIR" ]; then
+    rm -rf $BUILD_DIR
+fi
 mkdir -p $BUILD_DIR
 
 # 创建输出目录 (bin for executables/libs)
