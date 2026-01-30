@@ -22,7 +22,8 @@ template <typename T>
 class MmapWriter {
 public:
     // capacity: 能够存储的记录总数
-    MmapWriter(const std::string& base_path, uint64_t capacity) {
+    MmapWriter(const std::string& base_path, uint64_t capacity) 
+        : base_path_(base_path), capacity_(capacity) {
         std::string dat_path = base_path + ".dat";
         std::string meta_path = base_path + ".meta";
 
@@ -32,26 +33,57 @@ public:
         
         // 预分配空间
         uint64_t dat_size = capacity * sizeof(T);
-        if (ftruncate(fd_dat, dat_size) != 0) throw std::runtime_error("ftruncate 数据文件失败");
+        if (ftruncate(fd_dat, dat_size) != 0) {
+            close(fd_dat);
+            throw std::runtime_error("ftruncate 数据文件失败");
+        }
 
         data_ptr_ = (T*)mmap(nullptr, dat_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd_dat, 0);
-        if (data_ptr_ == MAP_FAILED) throw std::runtime_error("mmap 数据文件失败");
+        if (data_ptr_ == MAP_FAILED) {
+            close(fd_dat);
+            throw std::runtime_error("mmap 数据文件失败");
+        }
         close(fd_dat);
 
         // 2. 打开/创建元数据文件
         int fd_meta = open(meta_path.c_str(), O_RDWR | O_CREAT, 0666);
         if (fd_meta < 0) throw std::runtime_error("无法打开元数据文件: " + meta_path);
         
-        if (ftruncate(fd_meta, sizeof(MetaHeader)) != 0) throw std::runtime_error("ftruncate 元数据文件失败");
+        if (ftruncate(fd_meta, sizeof(MetaHeader)) != 0) {
+            close(fd_meta);
+            throw std::runtime_error("ftruncate 元数据文件失败");
+        }
 
         meta_ptr_ = (MetaHeader*)mmap(nullptr, sizeof(MetaHeader), PROT_READ | PROT_WRITE, MAP_SHARED, fd_meta, 0);
-        if (meta_ptr_ == MAP_FAILED) throw std::runtime_error("mmap 元数据文件失败");
+        if (meta_ptr_ == MAP_FAILED) {
+            close(fd_meta);
+            throw std::runtime_error("mmap 元数据文件失败");
+        }
         close(fd_meta);
 
         // 初始化元数据
         if (meta_ptr_->capacity == 0) {
             meta_ptr_->capacity = capacity;
             meta_ptr_->write_cursor = 0;
+        }
+    }
+
+    ~MmapWriter() {
+        if (meta_ptr_ && data_ptr_) {
+            // 获取最终写入位置
+            uint64_t final_cursor = meta_ptr_->write_cursor.load(std::memory_order_relaxed);
+            uint64_t actual_size = final_cursor * sizeof(T);
+            
+            // 解除映射
+            munmap(data_ptr_, capacity_ * sizeof(T));
+            munmap(meta_ptr_, sizeof(MetaHeader));
+            
+            // 裁剪文件到实际大小，释放磁盘空间
+            std::string dat_path = base_path_ + ".dat";
+            if (truncate(dat_path.c_str(), actual_size) != 0) {
+                // 析构函数中不抛出异常，仅打印错误
+                perror("MmapWriter truncate failed");
+            }
         }
     }
 
@@ -71,6 +103,8 @@ public:
     }
 
 private:
+    std::string base_path_;
+    uint64_t capacity_;
     T* data_ptr_ = nullptr;
     MetaHeader* meta_ptr_ = nullptr;
 };
@@ -90,19 +124,39 @@ public:
         if (fd_meta < 0) throw std::runtime_error("无法打开元数据文件: " + meta_path);
         
         meta_ptr_ = (MetaHeader*)mmap(nullptr, sizeof(MetaHeader), PROT_READ, MAP_SHARED, fd_meta, 0);
-        if (meta_ptr_ == MAP_FAILED) throw std::runtime_error("mmap 元数据文件失败");
+        if (meta_ptr_ == MAP_FAILED) {
+            close(fd_meta);
+            throw std::runtime_error("mmap 元数据文件失败");
+        }
         close(fd_meta);
 
         // 2. 打开数据 (只读)
         int fd_dat = open(dat_path.c_str(), O_RDONLY);
-        if (fd_dat < 0) throw std::runtime_error("无法打开数据文件: " + dat_path);
+        if (fd_dat < 0) {
+            munmap(meta_ptr_, sizeof(MetaHeader));
+            throw std::runtime_error("无法打开数据文件: " + dat_path);
+        }
         
-        uint64_t dat_size = meta_ptr_->capacity * sizeof(T);
+        capacity_ = meta_ptr_->capacity;
+        uint64_t dat_size = capacity_ * sizeof(T);
         data_ptr_ = (T*)mmap(nullptr, dat_size, PROT_READ, MAP_SHARED, fd_dat, 0);
-        if (data_ptr_ == MAP_FAILED) throw std::runtime_error("mmap 数据文件失败");
+        if (data_ptr_ == MAP_FAILED) {
+            close(fd_dat);
+            munmap(meta_ptr_, sizeof(MetaHeader));
+            throw std::runtime_error("mmap 数据文件失败");
+        }
         close(fd_dat);
         
         local_cursor_ = 0; 
+    }
+
+    ~MmapReader() {
+        if (data_ptr_) {
+            munmap(data_ptr_, capacity_ * sizeof(T));
+        }
+        if (meta_ptr_) {
+            munmap(meta_ptr_, sizeof(MetaHeader));
+        }
     }
 
     bool read(T& out_record) {
@@ -126,6 +180,7 @@ public:
     }
 
 private:
+    uint64_t capacity_;
     T* data_ptr_ = nullptr;
     MetaHeader* meta_ptr_ = nullptr;
     uint64_t local_cursor_ = 0;

@@ -1,0 +1,58 @@
+{
+    "trading_hours": {
+        "start": "09:00:00",
+        "end": "23:00:00"
+    },
+    "plugins": [
+        {
+            "name": "Replay",
+            "library": "./libmod_replay.so",
+            "enabled": true,
+            "config": {
+                "data_file": "../data/market_data_20260130",
+                "interval_ms": "10"
+            }
+        },
+        {
+            "name": "StrategyTree",
+            "library": "./libmod_strategy_tree.so",
+            "enabled": true,
+            "config": {
+                "nodes": [
+                    {
+                        "id": "FACTOR_JUMP",
+                        "library": "./libstrat_price_jump.so",
+                        "params": {
+                            "threshold": "0.1",
+                            "debug": "true"
+                        }
+                    },
+                    {
+                        "id": "COMBINER_01",
+                        "library": "./libstrat_grid.so",
+                        "params": {
+                            "threshold": "1.0",
+                            "debug": "true"
+                        }
+                    },
+                    {
+                        "id": "STAT_ARB_AU",
+                        "library": "./libstrat_stat_arb.so",
+                        "params": {
+                            "symbol": "au2606",
+                            "window_size": "100",
+                            "sigma": "4.0",
+                            "debug": "true"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "name": "TradeSim",
+            "library": "./libmod_trade.so",
+            "enabled": true,
+            "config": {}
+        }
+    ]
+}

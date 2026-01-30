@@ -28,6 +28,23 @@ target_link_libraries(mod_ctp_real PRIVATE thostmduserapi_se thosttraderapi_se -
 add_library(mod_strategy SHARED modules/strategy/simple_strategy.cpp)
 target_include_directories(mod_strategy PRIVATE include)
 
+# 2.1 编译插件 B-Tree: Strategy Tree Container
+add_library(mod_strategy_tree SHARED modules/strategy/strategy_tree_module.cpp)
+target_include_directories(mod_strategy_tree PRIVATE include)
+target_link_libraries(mod_strategy_tree PRIVATE dl)
+
+# 2.2 编译插件 B-Leaf: Grid Strategy (Leaf)
+add_library(strat_grid SHARED modules/strategy/grid_strategy.cpp)
+target_include_directories(strat_grid PRIVATE include)
+
+# 2.3 编译插件 B-Leaf: Price Jump Factor (Leaf)
+add_library(strat_price_jump SHARED modules/strategy/price_jump_node.cpp)
+target_include_directories(strat_price_jump PRIVATE include)
+
+# 2.4 编译插件 B-Leaf: Stat Arb Strategy (Leaf)
+add_library(strat_stat_arb SHARED modules/strategy/stat_arb_node.cpp)
+target_include_directories(strat_stat_arb PRIVATE include)
+
 # 3. 编译插件 C: SimpleTrade
 add_library(mod_trade SHARED modules/trade/simple_trade.cpp)
 target_include_directories(mod_trade PRIVATE include)

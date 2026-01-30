@@ -13,6 +13,8 @@
 
 #include "rapidjson/document.h"
 #include "rapidjson/istreamwrapper.h"
+#include "rapidjson/writer.h"
+#include "rapidjson/stringbuffer.h"
 
 static std::atomic<bool> g_shutdown(false);
 
@@ -147,6 +149,12 @@ bool HftEngine::loadConfig(const std::string& config_path) {
             // C. 准备配置 map
             ConfigMap config_map;
             if (p.HasMember("config") && p["config"].IsObject()) {
+                // [兼容性优化] 注入完整 JSON 字符串，供复杂模块解析
+                rapidjson::StringBuffer buffer;
+                rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+                p["config"].Accept(writer);
+                config_map["_json"] = buffer.GetString();
+
                 for (auto& m : p["config"].GetObject()) {
                     if (m.value.IsString()) {
                         config_map[m.name.GetString()] = m.value.GetString();

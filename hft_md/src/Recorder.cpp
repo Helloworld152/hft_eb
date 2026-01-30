@@ -60,6 +60,21 @@ public:
         }
     }
 
+    bool is_in_time_range() const {
+        if (start_time_ == 0 && end_time_ == 0) return true;
+
+        auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        struct tm* lt = localtime(&now);
+        uint32_t current_time = lt->tm_hour * 10000 + lt->tm_min * 100 + lt->tm_sec;
+
+        if (start_time_ <= end_time_) {
+            return current_time >= start_time_ && current_time <= end_time_;
+        } else {
+            // 跨午夜 (例如 21:00:00 到 02:30:00)
+            return current_time >= start_time_ || current_time <= end_time_;
+        }
+    }
+
     // CTP SPI 实现
     void OnFrontConnected() override {
         std::cout << "[Recorder] Front connected. Logging in..." << std::endl;
@@ -155,11 +170,28 @@ private:
         if (doc.HasMember("password")) password_ = doc["password"].GetString();
         if (doc.HasMember("output_path")) output_path_ = doc["output_path"].GetString();
         
+        if (doc.HasMember("trading_day")) {
+            trading_day_int_ = std::stoi(doc["trading_day"].GetString());
+        } else {
+            throw std::runtime_error("FATAL: Missing mandatory config 'trading_day'");
+        }
+        
+        if (doc.HasMember("start_time")) start_time_ = parse_time(doc["start_time"].GetString());
+        if (doc.HasMember("end_time")) end_time_ = parse_time(doc["end_time"].GetString());
+
         if (doc.HasMember("symbols") && doc["symbols"].IsArray()) {
             for (auto& s : doc["symbols"].GetArray()) {
                 symbols_.push_back(s.GetString());
             }
         }
+    }
+
+    uint32_t parse_time(const std::string& time_str) {
+        int hh = 0, mm = 0, ss = 0;
+        if (sscanf(time_str.c_str(), "%d:%d:%d", &hh, &mm, &ss) >= 2) {
+            return hh * 10000 + mm * 100 + ss;
+        }
+        return 0;
     }
 
     void writer_loop() {
@@ -211,6 +243,8 @@ private:
     std::string password_;
     std::vector<std::string> symbols_;
     std::string output_path_;
+    uint32_t start_time_ = 0;
+    uint32_t end_time_ = 0;
 
     CThostFtdcMdApi* md_api_ = nullptr;
     RingBuffer<TickRecord, 65536> rb_;

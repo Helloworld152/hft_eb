@@ -21,6 +21,7 @@ enum EventType {
     EVENT_RTN_TRADE,       // 成交回报 (交易所成交)
     EVENT_POS_UPDATE,      // 持仓更新
     EVENT_KLINE,           // K线数据
+    EVENT_SIGNAL,          // 因子信号 (Factor Signal)
     EVENT_LOG,             // 日志
     MAX_EVENTS
 };
@@ -79,6 +80,14 @@ struct PositionDetail {
     double net_pnl;
 };
 
+// 因子信号数据结构
+struct SignalRecord {
+    char symbol[32];
+    char factor_name[32];  // 因子/信号名称
+    double value;          // 信号值
+    uint64_t timestamp;    // 产生时间
+};
+
 // ==========================================
 // 2. 事件总线 (Host 提供)
 // ==========================================
@@ -118,6 +127,7 @@ public:
 struct StrategyContext {
     std::string strategy_id;
     std::function<void(const OrderReq&)> send_order;
+    std::function<void(const SignalRecord&)> send_signal; // 新增：支持发送信号
     std::function<void(const char* msg)> log;
 };
 
@@ -126,6 +136,8 @@ public:
     virtual ~IStrategyNode() = default;
     virtual void init(StrategyContext* ctx, const ConfigMap& config) = 0;
     virtual void onTick(const TickRecord* tick) = 0;
+    virtual void onKline(const KlineRecord* kline) = 0; // 处理 K线数据
+    virtual void onSignal(const SignalRecord* signal) = 0; // 处理因子信号
     virtual void onOrderUpdate(const OrderRtn* rtn) = 0;
 };
 
