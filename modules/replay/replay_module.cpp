@@ -22,6 +22,10 @@ public:
             std::cerr << "[Replay] 配置文件中未指定 data_file!" << std::endl;
         }
 
+        if (config.find("debug") != config.end()) {
+            debug_ = (config.at("debug") == "true" || config.at("debug") == "1");
+        }
+
         std::cout << "[Replay] 模块初始化完成。Mmap 基础路径: " << file_path_ << std::endl;
     }
 
@@ -66,7 +70,7 @@ private:
 
     void publish_tick(const TickRecord& rec) {
         // 采样打印：前5条必打，之后每50条打一次
-        if (tick_count_ < 5 || tick_count_ % 10 == 0 && strcmp(rec.symbol, "au2606") == 0) {
+        if (debug_ && (tick_count_ < 5 || tick_count_ % 10 == 0 && strcmp(rec.symbol, "au2606") == 0)) {
             std::cout << "[Bus] #" << tick_count_ << " | " << rec.symbol
                       << " | Trading Day: " << rec.trading_day
                       << " | Update Time: " << rec.update_time
@@ -81,6 +85,7 @@ private:
     std::string file_path_;
     std::thread thread_;
     std::atomic<bool> running_{false};
+    bool debug_ = false;
     uint64_t tick_count_ = 0; // 计数器
 };
 

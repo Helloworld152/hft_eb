@@ -161,13 +161,13 @@ private:
         try {
             // 预分配容量：1M (100万), 1H (5万), 1D (5000)
             writer_1m_ = std::make_unique<MmapWriter<KlineRecord>>(
-                output_path_ + "kline_1m_" + day_str, 2000000); // 2M slots enough for all symbols
+                output_path_ + "/kline_1m_" + day_str, 2000000); // 2M slots enough for all symbols
             
             writer_1h_ = std::make_unique<MmapWriter<KlineRecord>>(
-                output_path_ + "kline_1h_" + day_str, 100000);
+                output_path_ + "/kline_1h_" + day_str, 100000);
             
             writer_1d_ = std::make_unique<MmapWriter<KlineRecord>>(
-                output_path_ + "kline_1d_" + day_str, 10000);
+                output_path_ + "/kline_1d_" + day_str, 10000);
                 
             std::cout << "[KlineModule] Writers created for day " << day_str << std::endl;
         } catch (const std::exception& e) {
