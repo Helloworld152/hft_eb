@@ -31,11 +31,12 @@ target_include_directories(mod_strategy PRIVATE include)
 # 2.1 编译插件 B-Tree: Strategy Tree Container
 add_library(mod_strategy_tree SHARED modules/strategy/strategy_tree_module.cpp)
 target_include_directories(mod_strategy_tree PRIVATE include)
-target_link_libraries(mod_strategy_tree PRIVATE dl)
+target_link_libraries(mod_strategy_tree PRIVATE dl yaml-cpp)
 
 # 2.2 编译插件 B-Leaf: Grid Strategy (Leaf)
 add_library(strat_grid SHARED modules/strategy/grid_strategy.cpp)
 target_include_directories(strat_grid PRIVATE include)
+target_link_libraries(strat_grid PRIVATE yaml-cpp)
 
 # 2.3 编译插件 B-Leaf: Price Jump Factor (Leaf)
 add_library(strat_price_jump SHARED modules/strategy/price_jump_node.cpp)
@@ -44,6 +45,14 @@ target_include_directories(strat_price_jump PRIVATE include)
 # 2.4 编译插件 B-Leaf: Stat Arb Strategy (Leaf)
 add_library(strat_stat_arb SHARED modules/strategy/stat_arb_node.cpp)
 target_include_directories(strat_stat_arb PRIVATE include)
+
+# 2.5 编译插件 B-Leaf: SMA Factor (Leaf)
+add_library(strat_sma SHARED modules/strategy/sma_factor_node.cpp)
+target_include_directories(strat_sma PRIVATE include)
+
+# 2.6 编译插件 B-Leaf: Imbalance Factor (Leaf)
+add_library(strat_imbalance SHARED modules/strategy/imbalance_node.cpp)
+target_include_directories(strat_imbalance PRIVATE include)
 
 # 3. 编译插件 C: SimpleTrade
 add_library(mod_trade SHARED modules/trade/simple_trade.cpp)
@@ -67,6 +76,7 @@ target_link_libraries(mod_monitor PRIVATE -Wl,--no-as-needed pthread zmq -Wl,--a
 # 8. 编译插件 G: Replay (DataFeed)
 add_library(mod_replay SHARED modules/replay/replay_module.cpp)
 target_include_directories(mod_replay PRIVATE include core/include)
+target_link_libraries(mod_replay PRIVATE yaml-cpp)
 
 # 9. 编译插件 H: Kline (K线合成)
 add_library(mod_kline SHARED modules/kline/kline_module.cpp)
@@ -75,10 +85,24 @@ target_include_directories(mod_kline PRIVATE include core/include)
 # 7. 编译主程序
 add_executable(hft_engine src/main.cpp src/engine.cpp)
 target_include_directories(hft_engine PRIVATE include)
-target_link_libraries(hft_engine PRIVATE dl pthread)
+target_link_libraries(hft_engine PRIVATE dl pthread yaml-cpp)
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
 # 10. 编译工具: read_kline
 add_executable(read_kline tools/read_kline.cpp)
 target_include_directories(read_kline PRIVATE core/include)
 target_link_libraries(read_kline PRIVATE pthread)
+
+# ==========================================
+# External Dependencies
+# ==========================================
+include(FetchContent)
+
+# YAML-CPP
+FetchContent_Declare(
+  yaml-cpp
+  GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
+  GIT_TAG        0.8.0
+)
+FetchContent_MakeAvailable(yaml-cpp)
+

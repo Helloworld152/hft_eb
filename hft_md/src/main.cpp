@@ -2,7 +2,7 @@
 #include <iostream>
 
 int main(int argc, char* argv[]) {
-    std::string config_path = "../conf/config.json";
+    std::string config_path = "../conf/config.yaml";
     if (argc > 1) {
         config_path = argv[1];
     }

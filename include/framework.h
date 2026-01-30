@@ -82,6 +82,7 @@ struct PositionDetail {
 
 // 因子信号数据结构
 struct SignalRecord {
+    char source_id[32];    // 来源节点 ID (如 "FACTOR_RSI")
     char symbol[32];
     char factor_name[32];  // 因子/信号名称
     double value;          // 信号值

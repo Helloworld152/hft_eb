@@ -23,7 +23,7 @@ int main(int argc, char* argv[]) {
         std::cout << "IDX | 合约   | 交易日   | 时间         | 价格    | 成交量 | 成交额" << std::endl;
         std::cout << "----------------------------------------------------------------" << std::endl;
 
-        while (reader.read(rec)) {
+        while (reader.read(rec) && count < 100) {
             std::cout << std::setw(3) << count++ << " | "
                       << std::setw(6) << rec.symbol << " | "
                       << rec.trading_day << " | "

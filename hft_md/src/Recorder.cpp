@@ -11,8 +11,7 @@
 #include <filesystem>
 #include <iostream>
 #include <memory>
-#include "rapidjson/document.h"
-#include "rapidjson/istreamwrapper.h"
+#include <yaml-cpp/yaml.h>
 
 namespace fs = std::filesystem;
 
@@ -151,37 +150,31 @@ private:
     };
 
     void load_config(const std::string& config_path) {
-        std::ifstream ifs(config_path);
-        if (!ifs.is_open()) {
-            throw std::runtime_error("FATAL: Could not open config file: " + config_path);
-        }
-        
-        rapidjson::IStreamWrapper isw(ifs);
-        rapidjson::Document doc;
-        doc.ParseStream(isw);
-
-        if (doc.HasParseError()) {
-            throw std::runtime_error("FATAL: JSON Parse Error in " + config_path);
+        YAML::Node doc;
+        try {
+            doc = YAML::LoadFile(config_path);
+        } catch (const YAML::Exception& e) {
+            throw std::runtime_error("FATAL: YAML Parse Error in " + config_path + ": " + e.what());
         }
 
-        if (doc.HasMember("md_front")) md_front_ = doc["md_front"].GetString();
-        if (doc.HasMember("broker_id")) broker_id_ = doc["broker_id"].GetString();
-        if (doc.HasMember("user_id")) user_id_ = doc["user_id"].GetString();
-        if (doc.HasMember("password")) password_ = doc["password"].GetString();
-        if (doc.HasMember("output_path")) output_path_ = doc["output_path"].GetString();
+        if (doc["md_front"]) md_front_ = doc["md_front"].as<std::string>();
+        if (doc["broker_id"]) broker_id_ = doc["broker_id"].as<std::string>();
+        if (doc["user_id"]) user_id_ = doc["user_id"].as<std::string>();
+        if (doc["password"]) password_ = doc["password"].as<std::string>();
+        if (doc["output_path"]) output_path_ = doc["output_path"].as<std::string>();
         
-        if (doc.HasMember("trading_day")) {
-            trading_day_int_ = std::stoi(doc["trading_day"].GetString());
+        if (doc["trading_day"]) {
+            trading_day_int_ = std::stoi(doc["trading_day"].as<std::string>());
         } else {
             throw std::runtime_error("FATAL: Missing mandatory config 'trading_day'");
         }
         
-        if (doc.HasMember("start_time")) start_time_ = parse_time(doc["start_time"].GetString());
-        if (doc.HasMember("end_time")) end_time_ = parse_time(doc["end_time"].GetString());
+        if (doc["start_time"]) start_time_ = parse_time(doc["start_time"].as<std::string>());
+        if (doc["end_time"]) end_time_ = parse_time(doc["end_time"].as<std::string>());
 
-        if (doc.HasMember("symbols") && doc["symbols"].IsArray()) {
-            for (auto& s : doc["symbols"].GetArray()) {
-                symbols_.push_back(s.GetString());
+        if (doc["symbols"] && doc["symbols"].IsSequence()) {
+            for (const auto& s : doc["symbols"]) {
+                symbols_.push_back(s.as<std::string>());
             }
         }
     }

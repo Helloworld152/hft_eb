@@ -10,13 +10,12 @@
 #include <ctime>
 #include <sstream>
 #include <atomic>
+#include <filesystem>
 
-#include "rapidjson/document.h"
-#include "rapidjson/istreamwrapper.h"
-#include "rapidjson/writer.h"
-#include "rapidjson/stringbuffer.h"
+#include <yaml-cpp/yaml.h>
 
 static std::atomic<bool> g_shutdown(false);
+namespace fs = std::filesystem;
 
 void signal_handler(int signum) {
     std::cout << "\n[System] Caught signal " << signum << ", initiating shutdown..." << std::endl;
@@ -86,43 +85,34 @@ HftEngine::~HftEngine() {
 
 bool HftEngine::loadConfig(const std::string& config_path) {
     std::cout << ">>> HFT Engine Booting using config: " << config_path << std::endl;
-
-    // 1. 读取并解析 JSON
-    std::ifstream ifs(config_path);
-    if (!ifs.is_open()) {
-        std::cerr << "FATAL: Could not open config file!" << std::endl;
-        return false;
-    }
     
-    rapidjson::IStreamWrapper isw(ifs);
-    rapidjson::Document doc;
-    doc.ParseStream(isw);
-
-    if (doc.HasParseError()) {
-        std::cerr << "FATAL: JSON Parse Error!" << std::endl;
+    YAML::Node config;
+    try {
+        config = YAML::LoadFile(config_path);
+    } catch (const YAML::Exception& e) {
+        std::cerr << "FATAL: YAML Parse Error: " << e.what() << std::endl;
         return false;
     }
 
-    if (doc.HasMember("trading_hours") && doc["trading_hours"].IsObject()) {
-        const auto& th = doc["trading_hours"];
-        if (th.HasMember("start") && th["start"].IsString()) {
-            start_time_ = th["start"].GetString();
-        }
-        if (th.HasMember("end") && th["end"].IsString()) {
-            end_time_ = th["end"].GetString();
-        }
+    if (config["trading_hours"]) {
+        const auto& th = config["trading_hours"];
+        if (th["start"]) start_time_ = th["start"].as<std::string>();
+        if (th["end"]) end_time_ = th["end"].as<std::string>();
+        
         std::cout << "[Config] Trading Hours: " 
                   << (start_time_.empty() ? "Any" : start_time_) << " - " 
                   << (end_time_.empty() ? "Any" : end_time_) << std::endl;
     }
 
-    if (doc.HasMember("plugins") && doc["plugins"].IsArray()) {
-        const auto& plugin_list = doc["plugins"];
+    if (config["plugins"] && config["plugins"].IsSequence()) {
+        const auto& plugin_list = config["plugins"];
         
-        for (const auto& p : plugin_list.GetArray()) {
-            std::string name = p["name"].GetString();
-            std::string lib_path = p["library"].GetString();
-            bool enabled = p.HasMember("enabled") ? p["enabled"].GetBool() : true;
+        for (const auto& p : plugin_list) {
+            if (!p["name"] || !p["library"]) continue;
+
+            std::string name = p["name"].as<std::string>();
+            std::string lib_path = p["library"].as<std::string>();
+            bool enabled = p["enabled"] ? p["enabled"].as<bool>() : true;
 
             if (!enabled) {
                 std::cout << "[Loader] Skipping disabled module: " << name << std::endl;
@@ -148,22 +138,19 @@ bool HftEngine::loadConfig(const std::string& config_path) {
 
             // C. 准备配置 map
             ConfigMap config_map;
-            if (p.HasMember("config") && p["config"].IsObject()) {
-                // [兼容性优化] 注入完整 JSON 字符串，供复杂模块解析
-                rapidjson::StringBuffer buffer;
-                rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-                p["config"].Accept(writer);
-                config_map["_json"] = buffer.GetString();
+            if (p["config"] && p["config"].IsMap()) {
+                const auto& conf_node = p["config"];
+                
+                // 1. 注入完整 YAML 字符串，供复杂模块解析
+                YAML::Emitter out;
+                out << conf_node;
+                config_map["_yaml"] = out.c_str();
 
-                for (auto& m : p["config"].GetObject()) {
-                    if (m.value.IsString()) {
-                        config_map[m.name.GetString()] = m.value.GetString();
-                    } else if (m.value.IsBool()) {
-                        config_map[m.name.GetString()] = m.value.GetBool() ? "true" : "false";
-                    } else if (m.value.IsInt()) {
-                        config_map[m.name.GetString()] = std::to_string(m.value.GetInt());
-                    } else if (m.value.IsDouble()) {
-                        config_map[m.name.GetString()] = std::to_string(m.value.GetDouble());
+                // 2. 扁平化简单字段
+                for (YAML::const_iterator it = conf_node.begin(); it != conf_node.end(); ++it) {
+                    std::string key = it->first.as<std::string>();
+                    if (it->second.IsScalar()) {
+                        config_map[key] = it->second.as<std::string>();
                     }
                 }
             }
