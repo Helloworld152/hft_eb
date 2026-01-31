@@ -3,9 +3,11 @@
 #include <cstdint>
 
 // 全字段行情记录，支持深度回测与因子计算
-struct TickRecord {
+// 对齐到 64 字节（缓存行），提升缓存性能
+struct alignas(64) TickRecord {
     // 基础信息
     char symbol[32];
+    uint64_t symbol_id;    // Mapped from conf/symbols.txt
     uint32_t trading_day; // YYYYMMDD
     uint64_t update_time; // HHMMSSmmm
 
@@ -40,6 +42,7 @@ enum KlineInterval {
 
 struct KlineRecord {
     char symbol[32];
+    uint64_t symbol_id;    // Mapped ID
     uint32_t trading_day; // 交易日 YYYYMMDD
     uint64_t start_time;  // 周期起始时间 HHMMSSmmm
     double open;

@@ -1,4 +1,5 @@
 #include "../../include/framework.h"
+#include "../../core/include/symbol_manager.h"
 #include <cstring>
 #include <iostream>
 
@@ -6,7 +7,19 @@ class StrategyModule : public IModule {
 public:
     void init(EventBus* bus, const ConfigMap& config) override {
         bus_ = bus;
-        buy_thresh_ = std::stod(config.at("buy_thresh"));
+        
+        // Load global symbols (strategy assumes manager is already loaded by engine, but for safety...)
+        // In real engine, engine should load it. Here we load it if empty.
+        // SymbolManager::instance().load("../conf/symbols.txt"); 
+
+        if (config.find("symbol") != config.end()) {
+            std::string sym = config.at("symbol");
+            strncpy(target_symbol_, sym.c_str(), 31);
+            target_id_ = SymbolManager::instance().get_id(sym.c_str());
+        } else {
+            strncpy(target_symbol_, "au2606", 31);
+            target_id_ = SymbolManager::instance().get_id("au2606");
+        }
         sell_thresh_ = std::stod(config.at("sell_thresh"));
         
         std::cout << "[Strategy] Range: [" << buy_thresh_ << ", " << sell_thresh_ << "]" << std::endl;
@@ -23,6 +36,9 @@ public:
     }
 
     void onTick(TickRecord* md) {
+        // Fast filtering using integer ID (O(1))
+        if (md->symbol_id != target_id_) return;
+
         // 防止数据还未初始化就发单
         if (md->last_price <= 0.1) return;
 
@@ -60,12 +76,11 @@ public:
     void onPosUpdate(PositionDetail* pos) {
         // 更新本地持仓缓存
         current_pos_ = *pos;
-        // std::cout << "[Strategy] Pos Updated. Long: " << current_pos_.long_td + current_pos_.long_yd 
-        //           << " Short: " << current_pos_.short_td + current_pos_.short_yd << std::endl;
     }
 
     void sendOrder(const char* symbol, char dir, char offset, double price) {
         OrderReq req;
+        req.symbol_id = target_id_;
         strncpy(req.symbol, symbol, 31);
         req.direction = dir;
         req.offset_flag = offset; // 'O'pen, 'C'lose, 'T'oday
@@ -76,6 +91,8 @@ public:
 
 private:
     EventBus* bus_;
+    char target_symbol_[32];
+    uint64_t target_id_;
     double buy_thresh_;
     double sell_thresh_;
     

@@ -33,6 +33,7 @@ enum EventType {
 
 struct OrderReq {
     char symbol[32];
+    uint64_t symbol_id;
     char direction;   // 'B'uy or 'S'ell
     char offset_flag; // 'O'pen, 'C'lose, 'T'oday (上期所平今)
     double price;
@@ -43,6 +44,7 @@ struct OrderReq {
 struct OrderRtn {
     char order_ref[13];
     char symbol[32];
+    uint64_t symbol_id;
     char direction;      // 'B'/'S'
     char offset_flag;    // 'O'/'C'/'T'
     double limit_price;
@@ -55,6 +57,7 @@ struct OrderRtn {
 // 成交回报
 struct TradeRtn {
     char symbol[32];
+    uint64_t symbol_id;
     char direction;      // 'B'/'S'
     char offset_flag;    // 'O'/'C'/'T'
     double price;
@@ -66,6 +69,7 @@ struct TradeRtn {
 // 持仓明细
 struct PositionDetail {
     char symbol[32];
+    uint64_t symbol_id;
     
     // 多头
     int long_td;

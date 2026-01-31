@@ -147,7 +147,8 @@ public:
         }
         close(fd_dat);
         
-        local_cursor_ = 0; 
+        local_cursor_ = 0;
+        cached_write_cursor_ = meta_ptr_->write_cursor.load(std::memory_order_acquire);
     }
 
     ~MmapReader() {
@@ -160,10 +161,12 @@ public:
     }
 
     bool read(T& out_record) {
-        uint64_t w_cursor = meta_ptr_->write_cursor.load(std::memory_order_acquire);
-        
-        if (local_cursor_ >= w_cursor) {
-            return false;
+        // 优化：使用缓存的 write_cursor
+        if (local_cursor_ >= cached_write_cursor_) {
+            cached_write_cursor_ = meta_ptr_->write_cursor.load(std::memory_order_acquire);
+            if (local_cursor_ >= cached_write_cursor_) {
+                return false;
+            }
         }
 
         out_record = data_ptr_[local_cursor_];
@@ -171,12 +174,76 @@ public:
         return true;
     }
 
+    /** 返回 mmap 内记录的指针，无拷贝。调用方不得在下次 read/read_ptr 或 reader 析构后使用该指针。 */
+    const T* read_ptr() {
+        // 优化：缓存 write_cursor，减少原子操作频率
+        // 只在 local_cursor_ 接近边界时才重新加载
+        [[likely]] if (local_cursor_ < cached_write_cursor_) {
+            const T* ptr = &data_ptr_[local_cursor_];
+            local_cursor_++;
+            
+            // 预取下一条记录到 CPU 缓存（提前 1-2 条）
+            if (local_cursor_ + 1 < cached_write_cursor_) {
+                __builtin_prefetch(&data_ptr_[local_cursor_ + 1], 0, 3);  // 预取到 L1 缓存
+            }
+            return ptr;
+        }
+        
+        // 边界检查：重新加载 write_cursor
+        cached_write_cursor_ = meta_ptr_->write_cursor.load(std::memory_order_acquire);
+        if (local_cursor_ >= cached_write_cursor_) {
+            return nullptr;
+        }
+        
+        const T* ptr = &data_ptr_[local_cursor_];
+        local_cursor_++;
+        return ptr;
+    }
+    
+    /** 批量读取：一次读取多条记录到数组，返回实际读取数量 */
+    size_t read_batch(const T** out_ptrs, size_t max_count) {
+        if (local_cursor_ >= cached_write_cursor_) {
+            cached_write_cursor_ = meta_ptr_->write_cursor.load(std::memory_order_acquire);
+            if (local_cursor_ >= cached_write_cursor_) {
+                return 0;
+            }
+        }
+        
+        size_t available = cached_write_cursor_ - local_cursor_;
+        size_t count = (available < max_count) ? available : max_count;
+        
+        for (size_t i = 0; i < count; ++i) {
+            out_ptrs[i] = &data_ptr_[local_cursor_ + i];
+        }
+        
+        // 预取下一批数据
+        if (local_cursor_ + count + 8 < cached_write_cursor_) {
+            __builtin_prefetch(&data_ptr_[local_cursor_ + count + 4], 0, 3);
+        }
+        
+        local_cursor_ += count;
+        return count;
+    }
+
     void seek_to_end() {
         local_cursor_ = meta_ptr_->write_cursor.load(std::memory_order_acquire);
+        cached_write_cursor_ = local_cursor_;
     }
     
     void seek_to_start() {
         local_cursor_ = 0;
+        cached_write_cursor_ = meta_ptr_->write_cursor.load(std::memory_order_acquire);
+    }
+
+    uint64_t get_total_count() const {
+        return meta_ptr_->write_cursor.load(std::memory_order_acquire);
+    }
+
+    void seek(uint64_t pos) {
+        uint64_t total = get_total_count();
+        if (pos > total) pos = total;
+        local_cursor_ = pos;
+        cached_write_cursor_ = total;
     }
 
 private:
@@ -184,4 +251,5 @@ private:
     T* data_ptr_ = nullptr;
     MetaHeader* meta_ptr_ = nullptr;
     uint64_t local_cursor_ = 0;
+    uint64_t cached_write_cursor_ = 0;  // 缓存的 write_cursor，减少原子操作
 };

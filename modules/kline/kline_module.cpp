@@ -119,7 +119,8 @@ private:
     }
 
     void init_kline(KlineRecord& k, const TickRecord* tick, KlineInterval interval, uint64_t start_time) {
-        strncpy(k.symbol, tick->symbol, sizeof(k.symbol));
+        strncpy(k.symbol, tick->symbol, 31);
+        k.symbol_id = tick->symbol_id;
         k.trading_day = tick->trading_day;
         k.start_time = start_time;
         k.open = tick->last_price;

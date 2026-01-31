@@ -6,10 +6,7 @@
 #include <atomic>
 #include <cstring>
 #include <chrono>
-#include <filesystem>
 #include <immintrin.h> // 用于 _mm_pause
-
-namespace fs = std::filesystem;
 
 class ReplayModule : public IModule {
 public:
@@ -47,11 +44,36 @@ private:
                 MmapReader<TickRecord> reader(file_path_);
                 std::cout << "[Replay] 已连接到 Mmap 管道，开始回放..." << std::endl;
 
-                TickRecord rec;
+                auto start_t = std::chrono::high_resolution_clock::now();
+                bool perf_logged = false;
+                
+                // 批量读取缓冲区（可选优化）
+                constexpr size_t BATCH_SIZE = 16;
+                const TickRecord* batch_ptrs[BATCH_SIZE];
+
                 while (running_) {
-                    if (reader.read(rec)) {
-                        publish_tick(rec);
+                    // 批量读取模式：一次读取多条记录
+                    size_t batch_count = reader.read_batch(batch_ptrs, BATCH_SIZE);
+                    
+                    if (batch_count > 0) {
+                        if (debug_ && tick_count_ == 0) {
+                            start_t = std::chrono::high_resolution_clock::now();
+                        }
+                        
+                        // 处理批量数据
+                        for (size_t i = 0; i < batch_count; ++i) {
+                            publish_tick(*batch_ptrs[i]);
+                        }
+                        perf_logged = false;
                     } else {
+                        if (debug_ &&tick_count_ > 0 && !perf_logged) {
+                            auto end_t = std::chrono::high_resolution_clock::now();
+                            auto cost_us = std::chrono::duration_cast<std::chrono::microseconds>(end_t - start_t).count();
+                            std::cout << "[Replay] Finished/Paused. Ticks: " << tick_count_ 
+                                      << ", Cost: " << cost_us << " us" << std::endl;
+                            perf_logged = true;
+                        }
+
                         // 无锁轮询，极低延迟
                         _mm_pause(); 
                         
@@ -70,14 +92,16 @@ private:
 
     void publish_tick(const TickRecord& rec) {
         // 采样打印：前5条必打，之后每50条打一次
-        if (debug_ && (tick_count_ < 5 || tick_count_ % 10 == 0 && strcmp(rec.symbol, "au2606") == 0)) {
-            std::cout << "[Bus] #" << tick_count_ << " | " << rec.symbol
+        // Debug mode: Use string comparison for robustness (no dependency on SymbolManager loading)
+        if (debug_ && (tick_count_ < 5 || (tick_count_ % 10 == 0 && strcmp(rec.symbol, "au2606") == 0))) {
+            std::cout << "[Bus] #" << tick_count_ << " | " << rec.symbol << " (ID:" << rec.symbol_id << ")"
                       << " | Trading Day: " << rec.trading_day
                       << " | Update Time: " << rec.update_time
                       << " | Last: " << rec.last_price << " | Vol: " << rec.volume << std::endl;
         }
         tick_count_++;
 
+        // 发布到总线（测试 EventBus 性能）
         bus_->publish(EVENT_MARKET_DATA, const_cast<TickRecord*>(&rec));
     }
 

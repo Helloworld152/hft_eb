@@ -5,6 +5,67 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# ==========================================
+# 编译优化配置
+# ==========================================
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    # 基础优化级别（Release 模式默认 -O3）
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+    
+    # 架构特定优化：针对当前 CPU 优化（重要：提升 10-20%）
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=native -mtune=native")
+    
+    # 链接时优化（LTO）：跨模块优化（重要：提升 5-15%，但编译慢）
+    # 注意：LTO 会增加编译时间，但能显著提升性能
+    option(ENABLE_LTO "Enable Link Time Optimization" ON)
+    if(ENABLE_LTO)
+        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -flto")
+        set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto")
+        set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "-flto")
+    endif()
+    
+    # 内联优化：更激进的内联
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -finline-functions")
+    
+    # 循环优化：自动循环展开
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -funroll-loops")
+    
+    # 其他优化
+    # -fomit-frame-pointer: 省略帧指针，提升性能但影响调试
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -fomit-frame-pointer")
+    
+    # -fstrict-aliasing: 严格别名优化（需要代码保证无别名冲突）
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -fstrict-aliasing")
+    
+    # 数学优化（谨慎使用：可能改变浮点精度）
+    # 如果对浮点精度要求不高，可以启用 -ffast-math
+    option(ENABLE_FAST_MATH "Enable fast math optimizations" OFF)
+    if(ENABLE_FAST_MATH)
+        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -ffast-math -fno-math-errno")
+        message(STATUS "  - Fast math: enabled (may affect floating-point precision)")
+    endif()
+    
+    # 警告级别（Release 模式减少警告噪音）
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Wno-unused-variable -Wno-unused-parameter")
+    
+    message(STATUS "Release build: Optimizations enabled")
+    message(STATUS "  - Architecture: native")
+    if(ENABLE_LTO)
+        message(STATUS "  - LTO: enabled")
+    endif()
+endif()
+
+# Debug 模式配置
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -fno-omit-frame-pointer")
+    # Sanitizers 可选（会增加运行开销）
+    option(ENABLE_SANITIZERS "Enable sanitizers in Debug mode" OFF)
+    if(ENABLE_SANITIZERS)
+        set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fsanitize=address -fsanitize=undefined")
+        message(STATUS "Debug build: Sanitizers enabled")
+    endif()
+endif()
+
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 

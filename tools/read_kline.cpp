@@ -20,18 +20,19 @@ int main(int argc, char* argv[]) {
         size_t count = 0;
 
         std::cout << std::fixed << std::setprecision(2);
-        std::cout << "------------------------------------------------------------------------------------------" << std::endl;
-        std::cout << "IDX | Symbol | Day      | StartTime | Interval | Open    | High    | Low     | Close   | Vol" << std::endl;
-        std::cout << "------------------------------------------------------------------------------------------" << std::endl;
+        std::cout << "----------------------------------------------------------------------------------------------------" << std::endl;
+        std::cout << "IDX | Symbol | ID       | Day      | StartTime | Interval | Open    | High    | Low     | Close   | Vol" << std::endl;
+        std::cout << "----------------------------------------------------------------------------------------------------" << std::endl;
 
         while (reader.read(rec)) {
             std::string interval_str = "UNK";
             if (rec.interval == K_1M) interval_str = "1M";
             else if (rec.interval == K_1H) interval_str = "1H";
             else if (rec.interval == K_1D) interval_str = "1D";
-
-            std::cout << std::setw(3) << count++ << " | "
+            if (count <= 100) {
+                std::cout << std::setw(3) << count << " | "
                       << std::setw(6) << rec.symbol << " | "
+                      << std::setw(8) << rec.symbol_id << " | "
                       << rec.trading_day << " | "
                       << std::setw(9) << rec.start_time << " | "
                       << std::setw(8) << interval_str << " | "
@@ -41,9 +42,11 @@ int main(int argc, char* argv[]) {
                       << std::setw(7) << rec.close << " | "
                       << rec.volume
                       << std::endl;
+            }
+            count++;
         }
 
-        std::cout << "------------------------------------------------------------------------------------------" << std::endl;
+        std::cout << "----------------------------------------------------------------------------------------------------" << std::endl;
         std::cout << "Total Records: " << count << std::endl;
 
     } catch (const std::exception& e) {

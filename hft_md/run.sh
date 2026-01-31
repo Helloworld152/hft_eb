@@ -3,7 +3,7 @@
 # 获取脚本所在目录
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 BIN_PATH="${SCRIPT_DIR}/bin/hft_recorder"
-CONFIG_PATH="${SCRIPT_DIR}/conf/config.json"
+CONFIG_PATH="${SCRIPT_DIR}/conf/config.yaml"
 CTP_LIB_PATH="${SCRIPT_DIR}/../third_party/ctp/lib"
 
 # 检查二进制文件是否存在

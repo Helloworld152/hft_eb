@@ -22,11 +22,13 @@ graph TD
 
     subgraph Plugins
         Replay[Replay Module]
-        Strategy[Strategy Module]
+        Strategy[Strategy / Tree]
         Risk[Risk Module]
         Trade[Trade Module]
         CTP_Trade[CTP Real Module]
         PosMgr[Position Module]
+        Kline[Kline Module]
+        Monitor[Monitor Module]
     end
 
     Recorder -->|Write| DataFile
@@ -40,6 +42,8 @@ graph TD
     EventBus -->|dispatch| CTP_Trade
     CTP_Trade -->|RTN_TRADE| EventBus
     EventBus -->|dispatch| PosMgr
+    EventBus -->|dispatch| Kline
+    EventBus -->|dispatch| Monitor
 ```
 
 ### 核心组件
@@ -47,26 +51,40 @@ graph TD
 - **EventBus**: 同步事件分发核心，连接各个业务模块。
 - **Plugins (模块)**:
     - `replay`: 历史数据/实时数据回放模块。
-    - `strategy`: 交易策略实现。
+    - `strategy`: 交易策略实现 (支持普通策略和策略树)。
     - `risk`: 事前风控模块。
     - `trade` / `ctp_real`: 模拟/实盘交易执行模块。
     - `position`: 实时持仓管理。
+    - `kline`: K线生成模块 (1s, 1m, etc.)。
+    - `monitor`: 系统监控与指标导出 (Prometheus)。
 
 ### 独立录制器 (hft_md)
 位于 `hft_md/` 目录，是一个独立的行情录制进程。
 - **功能**: 连接 CTP 行情接口，将 Tick 数据直接写入 Mmap 文件。
 - **特性**: Crash-Safe，支持断点续传，为交易引擎提供 Zero Copy 的实时数据源。
 
+## 高级特性
+
+### 策略树 (Strategy Tree)
+`StrategyTreeModule` 是一个强大的策略容器，支持将复杂的交易逻辑拆解为多个独立的原子节点（Node）。
+- **动态组合**: 支持通过配置文件动态加载和组合多个策略节点（如：因子节点、信号节点、执行节点）。
+- **节点间通信**: 内置高速信号总线，支持节点间直接传递 `SignalRecord`，实现“因子 -> 信号 -> 执行”的流水线处理。
+- **统一上下文**: 为子节点提供统一的 `StrategyContext`，屏蔽底层 EventBus 细节。
+
 ## 目录结构
 ```
 hft_eb/
 ├── bin/                     # 编译产出
-├── conf/                    # 配置文件
+├── conf/                    # 配置文件 (.yaml)
 ├── core/                    # 核心库 (IPC, Protocol)
 ├── data/                    # 行情数据存储 (Mmap)
 ├── hft_md/                  # 独立行情录制器项目
 ├── include/                 # 引擎对外接口
 ├── modules/                 # 业务插件源码
+│   ├── strategy/            # 策略实现 (Grid, StrategyTree)
+│   ├── kline/               # K线生成
+│   ├── monitor/             # 监控模块
+│   └── py_strategy/         # Python 策略支持
 ├── src/                     # 引擎源码
 ├── third_party/             # 第三方依赖 (CTP)
 └── build_release.sh         # 构建脚本
@@ -97,10 +115,10 @@ cd hft_md
 ### 3. 运行
 
 **运行回测/回放模式:**
-确保 `conf/config_replay.json` 配置正确，指向有效的 Mmap 数据文件。
+确保 `conf/config_replay.yaml` 配置正确，指向有效的 Mmap 数据文件。
 ```bash
 cd bin
-./hft_engine ../conf/config_replay.json
+./hft_engine ../conf/config_replay.yaml
 ```
 
 **运行行情录制:**
@@ -170,14 +188,12 @@ set_target_properties(mod_my_plugin PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_
 
 ### 4. 配置文件
 
-在 `config.json` 的 `plugins` 列表中注册你的插件：
+在 `config.yaml` 的 `plugins` 列表中注册你的插件：
 
-```json
-{
-  "name": "my_custom_plugin",
-  "path": "libmod_my_plugin.so",
-  "config": {
-    "my_param": "some_value"
-  }
-}
+```yaml
+plugins:
+  - name: "my_custom_plugin"
+    library: "libmod_my_plugin.so"
+    config:
+      my_param: "some_value"
 ```

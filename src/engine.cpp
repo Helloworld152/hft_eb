@@ -1,7 +1,6 @@
 #include "../include/engine.h"
 #include <dlfcn.h>
 #include <iostream>
-#include <fstream>
 #include <thread>
 #include <chrono>
 #include <array>
@@ -10,12 +9,12 @@
 #include <ctime>
 #include <sstream>
 #include <atomic>
-#include <filesystem>
+#include <memory>
+#include <cstdint>
 
 #include <yaml-cpp/yaml.h>
 
 static std::atomic<bool> g_shutdown(false);
-namespace fs = std::filesystem;
 
 void signal_handler(int signum) {
     std::cout << "\n[System] Caught signal " << signum << ", initiating shutdown..." << std::endl;
@@ -26,18 +25,17 @@ void signal_handler(int signum) {
 // Internal Implementations
 // ==========================================
 
-// --- EventBus 实现 ---
+// --- EventBus 实现 (std::vector<std::function>) ---
 class EventBusImpl : public EventBus {
 public:
     void subscribe(EventType type, Handler handler) override {
-        if (type < 0 || type >= MAX_EVENTS) return;
-        handlers_[type].push_back(handler);
+        handlers_[type].push_back(std::move(handler));
     }
 
     void publish(EventType type, void* data) override {
-        if (type < 0 || type >= MAX_EVENTS) return;
-        for (auto& h : handlers_[type]) {
-            h(data);
+        // 热路径优化：移除边界检查以提升分发性能
+        for (const auto& handler : handlers_[type]) {
+            handler(data);
         }
     }
 

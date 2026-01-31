@@ -1,4 +1,5 @@
 #include "../../include/framework.h"
+#include "../../core/include/symbol_manager.h"
 #include <iostream>
 #include <cstring>
 #include <mutex>
@@ -24,15 +25,25 @@ private:
     void onTrade(TradeRtn* rtn) {
         std::lock_guard<std::mutex> lock(mtx_);
 
-        std::string symbol = rtn->symbol;
-        PositionDetail& pos = positions_[symbol];
-        strncpy(pos.symbol, symbol.c_str(), 31);
+        uint64_t id = rtn->symbol_id;
+        if (id == 0) {
+             // Try to recover ID if missing (should not happen if flow is correct)
+             id = SymbolManager::instance().get_id(rtn->symbol);
+        }
+
+        PositionDetail& pos = positions_[id];
+        
+        // Initialize if new
+        if (pos.symbol_id == 0) {
+            pos.symbol_id = id;
+            strncpy(pos.symbol, rtn->symbol, 31);
+        }
 
         // 简单的逻辑处理，暂未包含复杂的均价计算
         // Buy + Open = 多头增加
         if (rtn->direction == 'B' && rtn->offset_flag == 'O') {
             pos.long_td += rtn->volume;
-            std::cout << "[Position] " << symbol << " Long Open: +" << rtn->volume << std::endl;
+            std::cout << "[Position] " << pos.symbol << " Long Open: +" << rtn->volume << std::endl;
         }
         // Sell + Close = 多头减少
         else if (rtn->direction == 'S' && (rtn->offset_flag == 'C' || rtn->offset_flag == 'T')) {
@@ -49,12 +60,12 @@ private:
                     pos.long_td -= remain;
                 }
             }
-            std::cout << "[Position] " << symbol << " Long Close: -" << rtn->volume << std::endl;
+            std::cout << "[Position] " << pos.symbol << " Long Close: -" << rtn->volume << std::endl;
         }
         // Sell + Open = 空头增加
         else if (rtn->direction == 'S' && rtn->offset_flag == 'O') {
             pos.short_td += rtn->volume;
-            std::cout << "[Position] " << symbol << " Short Open: +" << rtn->volume << std::endl;
+            std::cout << "[Position] " << pos.symbol << " Short Open: +" << rtn->volume << std::endl;
         }
         // Buy + Close = 空头减少
         else if (rtn->direction == 'B' && (rtn->offset_flag == 'C' || rtn->offset_flag == 'T')) {
@@ -69,7 +80,7 @@ private:
                     pos.short_td -= remain;
                 }
             }
-            std::cout << "[Position] " << symbol << " Short Close: -" << rtn->volume << std::endl;
+            std::cout << "[Position] " << pos.symbol << " Short Close: -" << rtn->volume << std::endl;
         }
         
         // 确保不出现负持仓（异常情况）
@@ -92,7 +103,7 @@ private:
     }
 
     EventBus* bus_;
-    std::unordered_map<std::string, PositionDetail> positions_;
+    std::unordered_map<uint64_t, PositionDetail> positions_;
     std::mutex mtx_;
 };
 
