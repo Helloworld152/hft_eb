@@ -4,24 +4,72 @@
 #include <cstring>
 #include <mutex>
 #include <iomanip>
+#include <thread>
+#include <chrono>
+#include <fstream>
+#include <atomic>
 
 class PositionModule : public IModule {
 public:
     void init(EventBus* bus, const ConfigMap& config) override {
         bus_ = bus;
         
-        std::cout << "[Position] Initialized." << std::endl;
+        if (config.find("dump_path") != config.end()) {
+            dump_path_ = config.at("dump_path");
+        } else {
+            dump_path_ = "../data/pos.json";
+        }
+
+        std::cout << "[Position] Initialized. Dumping to: " << dump_path_ << std::endl;
 
         // 订阅成交回报
         bus_->subscribe(EVENT_RTN_TRADE, [this](void* d) {
             this->onTrade(static_cast<TradeRtn*>(d));
         });
         
-        // 订阅查询请求（可选，如果策略想主动问）
-        // 目前策略主要靠监听 EVENT_POS_UPDATE 被动更新
+        // 启动 Dump 线程
+        running_ = true;
+        dump_thread_ = std::thread(&PositionModule::dumpLoop, this);
+    }
+
+    void stop() override {
+        running_ = false;
+        if (dump_thread_.joinable()) dump_thread_.join();
     }
 
 private:
+    void dumpLoop() {
+        while (running_) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            dumpToJson();
+        }
+    }
+
+    void dumpToJson() {
+        std::lock_guard<std::mutex> lock(mtx_);
+        std::ofstream ofs(dump_path_);
+        if (!ofs.is_open()) return;
+
+        ofs << "{\n  \"positions\": [\n";
+        
+        bool first = true;
+        for (const auto& kv : positions_) {
+            const auto& p = kv.second;
+            if (!first) ofs << ",\n";
+            ofs << "    {"
+                << "\"symbol\": \"" << p.symbol << "\", "
+                << "\"long_td\": " << p.long_td << ", "
+                << "\"long_yd\": " << p.long_yd << ", "
+                << "\"short_td\": " << p.short_td << ", "
+                << "\"short_yd\": " << p.short_yd << ", "
+                << "\"net_pnl\": " << p.net_pnl
+                << "}";
+            first = false;
+        }
+        
+        ofs << "\n  ],\n  \"update_time\": " << std::time(nullptr) << "\n}\n";
+    }
+
     void onTrade(TradeRtn* rtn) {
         std::lock_guard<std::mutex> lock(mtx_);
 
@@ -103,8 +151,13 @@ private:
     }
 
     EventBus* bus_;
+    // Key changed from string to uint64_t (hash)
     std::unordered_map<uint64_t, PositionDetail> positions_;
     std::mutex mtx_;
+    
+    std::string dump_path_;
+    std::thread dump_thread_;
+    std::atomic<bool> running_{false};
 };
 
 EXPORT_MODULE(PositionModule)

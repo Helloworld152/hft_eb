@@ -22,14 +22,23 @@ enum EventType {
     EVENT_POS_UPDATE,      // 持仓更新
     EVENT_KLINE,           // K线数据
     EVENT_SIGNAL,          // 因子信号 (Factor Signal)
+    EVENT_QRY_POS,         // 主动查询持仓请求
+    EVENT_QRY_ACC,         // 主动查询资金请求
+    EVENT_CANCEL_REQ,      // 撤单请求
+    EVENT_ACC_UPDATE,      // 资金更新回报
     EVENT_LOG,             // 日志
     MAX_EVENTS
 };
 
-// 事件载荷 (Payload)
-// 全系统直接使用 core/protocol.h 中的 TickRecord 作为标准行情结构
-// 彻底废弃 MarketData
-// 彻底底弃 MarketData
+struct AccountDetail {
+    char broker_id[11];
+    char account_id[13];
+    double balance;         // 昨结 + 入金 - 出金
+    double available;       // 可用资金
+    double margin;          // 占用保证金
+    double close_pnl;       // 平仓盈亏
+    double position_pnl;    // 持仓盈亏
+};
 
 struct OrderReq {
     char symbol[32];
@@ -38,6 +47,11 @@ struct OrderReq {
     char offset_flag; // 'O'pen, 'C'lose, 'T'oday (上期所平今)
     double price;
     int volume;
+};
+
+struct CancelReq {
+    char symbol[32];
+    char order_ref[13];
 };
 
 // 报单回报
@@ -162,3 +176,4 @@ typedef IStrategyNode* (*CreateStrategyFunc)();
     extern "C" { \
         IStrategyNode* create_strategy() { return new CLASS_NAME(); } \
     }
+    

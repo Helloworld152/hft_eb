@@ -17,7 +17,11 @@ int main(int argc, char* argv[]) {
         MmapReader<KlineRecord> reader(base_path);
         
         KlineRecord rec;
-        size_t count = 0;
+        uint64_t total = reader.get_total_count();
+        uint64_t start_pos = (total > 100) ? (total - 100) : 0;
+        
+        reader.seek(start_pos);
+        size_t count = start_pos;
 
         std::cout << std::fixed << std::setprecision(2);
         std::cout << "----------------------------------------------------------------------------------------------------" << std::endl;
@@ -29,8 +33,8 @@ int main(int argc, char* argv[]) {
             if (rec.interval == K_1M) interval_str = "1M";
             else if (rec.interval == K_1H) interval_str = "1H";
             else if (rec.interval == K_1D) interval_str = "1D";
-            if (count <= 100) {
-                std::cout << std::setw(3) << count << " | "
+
+            std::cout << std::setw(3) << count++ << " | "
                       << std::setw(6) << rec.symbol << " | "
                       << std::setw(8) << rec.symbol_id << " | "
                       << rec.trading_day << " | "
@@ -42,12 +46,10 @@ int main(int argc, char* argv[]) {
                       << std::setw(7) << rec.close << " | "
                       << rec.volume
                       << std::endl;
-            }
-            count++;
         }
 
         std::cout << "----------------------------------------------------------------------------------------------------" << std::endl;
-        std::cout << "Total Records: " << count << std::endl;
+        std::cout << "Total Records: " << total << " (Showing last " << (total - start_pos) << ")" << std::endl;
 
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;

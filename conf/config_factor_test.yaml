@@ -7,7 +7,7 @@ plugins:
     library: "../bin/libmod_replay.so"
     enabled: true
     config:
-      data_file: "../data/market_data_20260130"
+      data_file: "../data/market_data_20260129"
 
   - name: StrategyTree
     library: "../bin/libmod_strategy_tree.so"
@@ -30,12 +30,12 @@ plugins:
           library: "../bin/libstrat_grid.so"
           params:
             threshold: 0.8      # 总加权分达到 0.8 时发单
-            debug: true
+            debug: false
             weights:
               SMA_Diff: 0.4     # 40% 权重
               Imbalance: 0.6    # 60% 权重
   
-  - name: TradeSim
-    library: "../bin/libmod_trade.so"
-    enabled: true
-    config: {}
+  # - name: TradeSim
+  #   library: "../bin/libmod_trade.so"
+  #   enabled: true
+  #   config: {}

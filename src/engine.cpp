@@ -1,4 +1,5 @@
 #include "../include/engine.h"
+#include "../core/include/symbol_manager.h"
 #include <dlfcn.h>
 #include <iostream>
 #include <thread>
@@ -84,6 +85,21 @@ HftEngine::~HftEngine() {
 bool HftEngine::loadConfig(const std::string& config_path) {
     std::cout << ">>> HFT Engine Booting using config: " << config_path << std::endl;
     
+    // 显式加载核心库，并导出全局符号 (RTLD_GLOBAL)
+    // 这一步至关重要，确保所有插件都能共享 Host 中的 SymbolManager 单例实例
+    void* core_lib = dlopen("libhft_core.so", RTLD_GLOBAL | RTLD_NOW);
+    if (!core_lib) {
+        // 尝试从 bin 目录加载
+        core_lib = dlopen("./bin/libhft_core.so", RTLD_GLOBAL | RTLD_NOW);
+    }
+    
+    if (!core_lib) {
+        std::cerr << "[System] Warning: Failed to load libhft_core.so globally: " << dlerror() << std::endl;
+    }
+
+    // 加载全局品种映射表
+    SymbolManager::instance().load("conf/symbols.txt");
+
     YAML::Node config;
     try {
         config = YAML::LoadFile(config_path);

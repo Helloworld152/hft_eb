@@ -141,3 +141,35 @@ cd bin
 ./hft_engine ../conf/config_replay.json
 ```
 *(需确保 `conf/config_replay.json` 中的 `data_file` 指向真实存在的 mmap 文件路径)*
+
+## 6. 开发准则 (Development Protocol)
+
+### 6.1 Performance is King (性能至上)
+- **No Allocations in Hot Path**: 在 `on_event` 回调中严禁使用 `new/malloc`，禁止 `std::string` 或 `std::vector` 的动态扩容。一切必须预分配。
+- **Cache Friendly**: 数据结构必须对齐（`alignas`），访问模式必须线性。指针跳转（Pointer Chasing）是不可接受的。
+- **Branch Prediction**: 在核心路径上使用 `[[likely]]` / `[[unlikely]]` 提示编译器。
+- **Zero Copy**: 任何跨模块数据传递必须传递指针或引用。如果让我看到 `memcpy` 在处理行情数据，你会被炒鱿鱼。
+
+### 6.2 Code Quality (代码质量)
+- **Modern C++**: 使用 C++20。使用 `concept` 约束模板，使用 `constexpr` 计算常量。
+- **Explicit is Better**: 禁止隐式类型转换。单参数构造函数必须 `explicit`。
+- **No Exceptions**: 在 Hot Path 禁用异常处理。错误码比 `try-catch` 快，且不可预测的 Stack Unwinding 是延迟杀手。
+- **Const Correctness**: 如果一个变量不应该被修改，它必须是 `const`。这不仅仅是文档，是给编译器的优化提示。
+
+### 6.3 Testing & Verification (验证)
+- **Unit Tests**: 核心逻辑（如订单匹配、风控计算）必须有 100% 覆盖率的单元测试。
+- **Replay First**: 任何策略变更上线前，必须通过 `modules/replay` 进行历史数据回放验证。
+- **Sanitizers**: 开发环境必须开启 ASAN/TSAN。内存泄漏和竞争条件在 HFT 中是致命的。
+
+### 6.4 Git Etiquette (提交规范)
+- **Atomic Commits**: 一个 Commit 只做一件事。
+- **Clear Messages**: 标题简明扼要，正文解释 *Why* 而不是 *What*。
+- **No Garbage**: 禁止提交 `.o`, `.log`, `.tmp` 文件。`.gitignore` 是你的朋友。
+
+### 6.5 Configuration Standards (配置规范)
+- **Debug Switch**: 所有插件配置（json/yaml）必须包含 `debug` (bool) 字段。
+  - `true` (Debug Mode): 开启详细日志（Level <= DEBUG），启用额外的运行时边界检查，允许为了可观测性牺牲性能。
+  - `false` (Production Mode): 仅记录 WARN/ERROR，关闭所有非必要的检查，性能绝对优先。
+- **Hot Reload**: 涉及策略参数的配置应支持热加载（如果架构允许），但 `debug` 开关通常在初始化时确定。
+
+Talk is cheap. Show me the code.

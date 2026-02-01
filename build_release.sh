@@ -4,10 +4,14 @@ set -e
 # 创建构建目录 (build for intermediate files)
 BUILD_DIR="build"
 
-if [ -d "$BUILD_DIR" ]; then
+if [ "$1" == "clean" ]; then
+    echo ">>> Cleaning build directory..."
     rm -rf $BUILD_DIR
 fi
-mkdir -p $BUILD_DIR
+
+if [ ! -d "$BUILD_DIR" ]; then
+    mkdir -p $BUILD_DIR
+fi
 
 # 创建输出目录 (bin for executables/libs)
 BIN_DIR="bin"

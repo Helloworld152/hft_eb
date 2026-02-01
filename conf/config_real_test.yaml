@@ -1,0 +1,22 @@
+trading_day: '20260131'
+
+plugins:
+  - name: CTP_Trade_Real
+    library: "../bin/libmod_ctp_real.so"
+    enabled: true
+    config:
+      td_front: "tcp://182.254.243.31:30001"
+      broker_id: "9999"
+      user_id: "247060"
+      password: "RY20000219*"
+      debug: true
+
+  - name: WebSocket_Monitor
+    library: "../bin/libmod_monitor.so"
+    enabled: true
+    config:
+      ws_port: 8877
+      pub_addr: "tcp://*:5555"
+      debug: true
+      query_interval: 10 # 主动查询间隔(秒)
+

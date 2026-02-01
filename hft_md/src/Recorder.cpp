@@ -1,5 +1,6 @@
 #include "protocol.h"
 #include "ring_buffer.h"
+#include "symbol_manager.h"
 #include "ThostFtdcMdApi.h"
 #include "mmap_util.h"
 #include <thread>
@@ -26,6 +27,9 @@ public:
     void start() {
         if (running_) return;
         running_ = true;
+
+        // Load symbols
+        SymbolManager::instance().load("../conf/symbols.txt");
 
         // 1. 启动异步写入线程
         writer_thread_ = std::thread(&TickRecorder::writer_loop, this);
@@ -87,7 +91,8 @@ public:
     void OnRspUserLogin(CThostFtdcRspUserLoginField *pRspUserLogin, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast) override {
         if (pRspInfo && pRspInfo->ErrorID == 0) {
             std::string tday = pRspUserLogin->TradingDay;
-            trading_day_int_ = std::stoi(tday);
+            std::cout << "[Recorder] Login Success. Exchange TradingDay: " << tday 
+                      << " | Using Config TradingDay: " << trading_day_int_ << std::endl;
             
             std::vector<char*> subs;
             for (auto& s : symbols_) subs.push_back(const_cast<char*>(s.c_str()));
@@ -103,7 +108,14 @@ public:
         memset(&rec, 0, sizeof(TickRecord));
         
         strncpy(rec.symbol, pData->InstrumentID, sizeof(rec.symbol)-1);
-        rec.trading_day = trading_day_int_;
+        rec.symbol_id = SymbolManager::instance().get_id(rec.symbol);
+
+        // Use TradingDay from market data if provided, otherwise use config/login value
+        if (pData->TradingDay[0] != '\0') {
+            rec.trading_day = std::stoi(pData->TradingDay);
+        } else {
+            rec.trading_day = trading_day_int_;
+        }
         
         // 价格与成交
         rec.last_price = pData->LastPrice;
@@ -146,7 +158,6 @@ public:
 private:
     struct WriterContext {
         std::unique_ptr<MmapWriter<TickRecord>> writer;
-        uint32_t current_day = 0;
     };
 
     void load_config(const std::string& config_path) {
@@ -162,6 +173,7 @@ private:
         if (doc["user_id"]) user_id_ = doc["user_id"].as<std::string>();
         if (doc["password"]) password_ = doc["password"].as<std::string>();
         if (doc["output_path"]) output_path_ = doc["output_path"].as<std::string>();
+        if (doc["file_suffix"]) file_suffix_ = doc["file_suffix"].as<std::string>();
         
         if (doc["trading_day"]) {
             trading_day_int_ = std::stoi(doc["trading_day"].as<std::string>());
@@ -202,24 +214,22 @@ private:
     }
 
     void save_to_file(const TickRecord& rec) {
+        // Lazy initialization of the writer based on CONFIGURATION only
         if (!global_ctx_) {
             global_ctx_ = std::make_unique<WriterContext>();
-        }
-
-        if (!global_ctx_->writer || global_ctx_->current_day != rec.trading_day) {
+            
             fs::create_directories(output_path_);
 
             char date_str[16];
-            snprintf(date_str, sizeof(date_str), "%u", rec.trading_day);
+            snprintf(date_str, sizeof(date_str), "%u", trading_day_int_);
             
-            // 基础文件名，MmapWriter 会自动补全后缀
-            std::string base_path = output_path_ + "/market_data_" + date_str;
+            // Filename strictly determined by config
+            std::string base_path = output_path_ + "/market_data_" + date_str + file_suffix_;
             
-            std::cout << "[Recorder] Switching Mmap file: " << base_path << std::endl;
+            std::cout << "[Recorder] Output File: " << base_path << std::endl;
             
-            // 预分配 500 万条记录 (约 1GB)
+            // Pre-allocate 5M records (~1GB)
             global_ctx_->writer = std::make_unique<MmapWriter<TickRecord>>(base_path, 5000000);
-            global_ctx_->current_day = rec.trading_day;
         }
 
         if (global_ctx_->writer) {
@@ -236,6 +246,7 @@ private:
     std::string password_;
     std::vector<std::string> symbols_;
     std::string output_path_;
+    std::string file_suffix_; // 新增：文件名后缀
     uint32_t start_time_ = 0;
     uint32_t end_time_ = 0;
 
