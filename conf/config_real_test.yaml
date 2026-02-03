@@ -1,7 +1,15 @@
 trading_day: '20260131'
 
 plugins:
-  - name: CTP_Trade_Real
+  - name: WebSocket_Monitor
+    library: "../bin/libmod_monitor.so"
+    enabled: true
+    config:
+      ws_port: 8877
+      pub_addr: "tcp://*:5555"
+      debug: true
+  
+  - name: CTP_Trade_Real_1
     library: "../bin/libmod_ctp_real.so"
     enabled: true
     config:
@@ -10,13 +18,21 @@ plugins:
       user_id: "247060"
       password: "RY20000219*"
       debug: true
-
-  - name: WebSocket_Monitor
-    library: "../bin/libmod_monitor.so"
+  
+  - name: CTP_Trade_Real_2
+    library: "../bin/libmod_ctp_real.so"
     enabled: true
     config:
-      ws_port: 8877
-      pub_addr: "tcp://*:5555"
+      td_front: "tcp://182.254.243.31:30001"
+      broker_id: "9999"
+      user_id: "253535"
+      password: "20051215@Jenny"
       debug: true
+
+  - name: Position_Manager
+    library: "../bin/libmod_position.so"
+    enabled: true
+    config:
+      dump_path: "../data/pos_real.json"
       query_interval: 10 # 主动查询间隔(秒)
 

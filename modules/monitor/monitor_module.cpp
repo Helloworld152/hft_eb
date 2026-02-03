@@ -47,6 +47,7 @@ struct MonitorEvent {
         TradeRtn trade;
         PositionDetail pos;
         AccountDetail acc;
+        ConnectionStatus conn;
     } data;
 };
 
@@ -65,10 +66,8 @@ public:
             std::string val = config.at("debug");
             debug_ = (val == "true" || val == "1");
         }
-        if (config.count("query_interval")) query_interval_ = std::stoi(config.at("query_interval"));
 
-        std::cout << "[Monitor] 初始化. ZMQ 地址: " << pub_addr_ << ", WS 端口: " << ws_port
-                  << ", 查询间隔: " << query_interval_ << "s" << std::endl;
+        std::cout << "[Monitor] 初始化. ZMQ 地址: " << pub_addr_ << ", WS 端口: " << ws_port << std::endl;
 
         ws_server_ = std::make_unique<ix::WebSocketServer>(ws_port, "0.0.0.0");
         ws_server_->setOnConnectionCallback(
@@ -81,8 +80,9 @@ public:
                         if (msg->type == ix::WebSocketMessageType::Message) {
                             this->handleClientMessage(msg->str);
                         } else if (msg->type == ix::WebSocketMessageType::Open) {
-                            if (debug_) std::cout << "[Monitor] WS 客户端已连接，发送持仓快照..." << std::endl;
+                            if (debug_) std::cout << "[Monitor] WS 客户端已连接，发送快照..." << std::endl;
                             this->sendPositionSnapshot(webSocket);
+                            this->sendConnectionSnapshot(webSocket);
                         }
                     }
                 );
@@ -94,6 +94,7 @@ public:
             MonitorEvent evt;
             evt.type = EVENT_MARKET_DATA;
             std::memcpy(&evt.data.md, d, sizeof(TickRecord));
+            std::lock_guard<std::mutex> lock(queue_mtx_);
             queue_.push(evt);
         });
 
@@ -101,6 +102,7 @@ public:
             MonitorEvent evt;
             evt.type = EVENT_RTN_ORDER;
             std::memcpy(&evt.data.rtn, d, sizeof(OrderRtn));
+            std::lock_guard<std::mutex> lock(queue_mtx_);
             queue_.push(evt); 
         });
 
@@ -108,6 +110,7 @@ public:
             MonitorEvent evt;
             evt.type = EVENT_RTN_TRADE;
             std::memcpy(&evt.data.trade, d, sizeof(TradeRtn));
+            std::lock_guard<std::mutex> lock(queue_mtx_);
             queue_.push(evt);
         });
 
@@ -115,6 +118,7 @@ public:
             MonitorEvent evt;
             evt.type = EVENT_ACC_UPDATE;
             std::memcpy(&(evt.data.acc), d, sizeof(AccountDetail));
+            std::lock_guard<std::mutex> lock(queue_mtx_);
             queue_.push(evt);
         });
 
@@ -122,12 +126,31 @@ public:
             PositionDetail* p = static_cast<PositionDetail*>(d);
             {
                 std::lock_guard<std::mutex> lock(pos_mtx_);
-                pos_cache_[p->symbol_id] = *p; // 还原回简单的缓存逻辑
+                std::string acc_id = p->account_id;
+                if (acc_id.empty()) acc_id = "default";
+                
+                // PositionModule 已经完成了多空合并，这里直接覆盖即可
+                pos_cache_[acc_id][p->symbol_id] = *p;
             }
 
             MonitorEvent evt;
             evt.type = EVENT_POS_UPDATE;
             std::memcpy(&evt.data.pos, p, sizeof(PositionDetail));
+            std::lock_guard<std::mutex> lock(queue_mtx_);
+            queue_.push(evt);
+        });
+
+        bus_->subscribe(EVENT_CONN_STATUS, [this](void* d) {
+            ConnectionStatus* cs = static_cast<ConnectionStatus*>(d);
+            {
+                std::lock_guard<std::mutex> lock(pos_mtx_); // Reuse mutex
+                std::string key = std::string(cs->account_id) + "_" + cs->source;
+                conn_cache_[key] = *cs;
+            }
+            MonitorEvent evt;
+            evt.type = EVENT_CONN_STATUS;
+            std::memcpy(&(evt.data.conn), d, sizeof(ConnectionStatus));
+            std::lock_guard<std::mutex> lock(queue_mtx_);
             queue_.push(evt);
         });
     }
@@ -135,17 +158,8 @@ public:
     void start() override {
         running_ = true;
         
-        // 启动后立即触发一次持仓查询
-        // 资金查询将由 queryLoop 在间隔后触发，避免并发冲突
-        bus_->publish(EVENT_QRY_POS, nullptr);
-
         // Start ZMQ/Broadcasting Thread
         worker_ = std::thread(&MonitorModule::io_loop, this);
-        
-        // Start Active Query Thread
-        if (query_interval_ > 0) {
-            query_worker_ = std::thread(&MonitorModule::queryLoop, this);
-        }
         
         // Start WS Server (Non-blocking)
         auto res = ws_server_->listen();
@@ -160,7 +174,6 @@ public:
     void stop() override {
         running_ = false;
         if (ws_server_) ws_server_->stop();
-        if (query_worker_.joinable()) query_worker_.join();
         if (worker_.joinable()) worker_.join();
     }
 
@@ -168,7 +181,27 @@ private:
     void sendPositionSnapshot(std::shared_ptr<ix::WebSocket> client) {
         std::string json_str = buildSnapshotJson();
         if (json_str.empty()) return;
+        if (debug_) std::cout << "[Monitor] 发送持仓快照给新客户端: " << json_str << std::endl;
         client->send(json_str);
+    }
+
+    void sendConnectionSnapshot(std::shared_ptr<ix::WebSocket> client) {
+        std::lock_guard<std::mutex> lock(pos_mtx_);
+        for (const auto& kv : conn_cache_) {
+            const auto& cs = kv.second;
+            json j;
+            j["type"] = "status";
+            j["account_id"] = cs.account_id;
+            j["source"] = cs.source;
+            j["code"] = std::string(1, cs.status);
+            j["msg"] = gbk_to_utf8(cs.msg);
+            j["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            
+            std::string json_str = j.dump();
+            if (debug_) std::cout << "[Monitor] 发送连接状态给新客户端: " << json_str << std::endl;
+            client->send(json_str);
+        }
     }
 
     std::string buildSnapshotJson() {
@@ -179,23 +212,26 @@ private:
         root["type"] = "pos_snapshot";
         root["data"] = json::array();
 
-        for (const auto& kv : pos_cache_) {
-            const auto& pos = kv.second;
-            json j;
-            j["symbol"] = pos.symbol;
-            j["symbol_id"] = pos.symbol_id;
-            j["long_td"] = pos.long_td;
-            j["long_yd"] = pos.long_yd;
-            j["long_total"] = pos.long_td + pos.long_yd;
-            j["long_price"] = pos.long_avg_price;
-            
-            j["short_td"] = pos.short_td;
-            j["short_yd"] = pos.short_yd;
-            j["short_total"] = pos.short_td + pos.short_yd;
-            j["short_price"] = pos.short_avg_price;
-            
-            j["pnl"] = pos.net_pnl;
-            root["data"].push_back(j);
+        for (const auto& acc_kv : pos_cache_) {
+            for (const auto& pos_kv : acc_kv.second) {
+                const auto& pos = pos_kv.second;
+                json j;
+                j["account_id"] = pos.account_id;
+                j["symbol"] = pos.symbol;
+                j["symbol_id"] = pos.symbol_id;
+                j["long_td"] = pos.long_td;
+                j["long_yd"] = pos.long_yd;
+                j["long_total"] = pos.long_td + pos.long_yd;
+                j["long_price"] = pos.long_avg_price;
+                
+                j["short_td"] = pos.short_td;
+                j["short_yd"] = pos.short_yd;
+                j["short_total"] = pos.short_td + pos.short_yd;
+                j["short_price"] = pos.short_avg_price;
+                
+                j["pnl"] = pos.net_pnl;
+                root["data"].push_back(j);
+            }
         }
         return root.dump();
     }
@@ -209,8 +245,10 @@ private:
 
             if (action == "order") {
                 OrderReq req;
+                std::string acc_id = j.value("account_id", "");
+                strncpy(req.account_id, acc_id.c_str(), 15);
+
                 std::string symbol = j.value("symbol", "");
-                
                 strncpy(req.symbol, symbol.c_str(), 31);
                 req.symbol_id = SymbolManager::instance().get_id(req.symbol);
                 
@@ -224,14 +262,17 @@ private:
                 req.volume = j.value("volume", 1);
 
                 if (debug_) {
-                    std::cout << "[Monitor] 远程下单: " << req.symbol << " " 
-                              << req.direction << " @ " << req.price << std::endl;
+                    std::cout << "[Monitor] 远程下单: Acc=" << req.account_id << " " 
+                              << req.symbol << " " << req.direction << " @ " << req.price << std::endl;
                 }
 
                 bus_->publish(EVENT_ORDER_SEND, &req);
             } else if (action == "cancel") {
                 CancelReq req;
                 std::memset(&req, 0, sizeof(req));
+                std::string acc_id = j.value("account_id", "");
+                strncpy(req.account_id, acc_id.c_str(), 15);
+
                 std::string symbol = j.value("symbol", "");
                 std::string order_ref = j.value("order_ref", "");
                 
@@ -239,7 +280,8 @@ private:
                 strncpy(req.order_ref, order_ref.c_str(), 12);
                 
                 if (debug_) {
-                    std::cout << "[Monitor] 远程撤单: " << req.symbol << " Ref=" << req.order_ref << std::endl;
+                    std::cout << "[Monitor] 远程撤单: Acc=" << req.account_id << " "
+                              << req.symbol << " Ref=" << req.order_ref << std::endl;
                 }
                 bus_->publish(EVENT_CANCEL_REQ, &req);
             }
@@ -286,6 +328,7 @@ private:
                 } 
                 else if (evt.type == EVENT_RTN_ORDER) {
                     j["type"] = "rtn";
+                    j["account_id"] = evt.data.rtn.account_id;
                     j["order_ref"] = evt.data.rtn.order_ref;
                     j["symbol"] = evt.data.rtn.symbol;
                     j["direction"] = std::string(1, evt.data.rtn.direction);
@@ -299,6 +342,7 @@ private:
                 }
                 else if (evt.type == EVENT_RTN_TRADE) {
                     j["type"] = "trade";
+                    j["account_id"] = evt.data.trade.account_id;
                     j["order_ref"] = evt.data.trade.order_ref;
                     j["trade_id"] = evt.data.trade.trade_id;
                     j["symbol"] = evt.data.trade.symbol;
@@ -315,6 +359,13 @@ private:
                     j["margin"] = evt.data.acc.margin;
                     j["pnl"] = evt.data.acc.close_pnl + evt.data.acc.position_pnl;
                 }
+                else if (evt.type == EVENT_CONN_STATUS) {
+                    j["type"] = "status";
+                    j["account_id"] = evt.data.conn.account_id;
+                    j["source"] = evt.data.conn.source;
+                    j["code"] = std::string(1, evt.data.conn.status);
+                    j["msg"] = gbk_to_utf8(evt.data.conn.msg);
+                }
                 else if (evt.type == EVENT_POS_UPDATE) {
                     // 标记持仓脏数据，稍后统一推送快照
                     pos_dirty = true;
@@ -322,6 +373,10 @@ private:
                 }
 
                 if (!j.empty()) {
+                    // 添加发送时间戳 (毫秒)
+                    j["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count();
+
                     // 使用 ignore_errors 标志进行 dump
                     std::string json_str = j.dump(-1, ' ', false, json::error_handler_t::replace);
 
@@ -354,7 +409,9 @@ private:
                             client->send(snapshot);
                         }
                     }
-                    if (debug_) std::cout << "[Monitor] 推送持仓快照 (Batch)" << std::endl;
+                    if (debug_) {
+                        std::cout << "[Monitor] 批量推送持仓快照: " << snapshot << std::endl;
+                    }
                 }
                 pos_dirty = false;
                 last_flush = now;
@@ -376,8 +433,11 @@ private:
     std::unique_ptr<ix::WebSocketServer> ws_server_;
     
     // Position Cache for initial snapshots
-    std::unordered_map<uint64_t, PositionDetail> pos_cache_;
+    std::unordered_map<std::string, std::unordered_map<uint64_t, PositionDetail>> pos_cache_;
+    // Connection Status Cache: Key = AccountID_Source
+    std::unordered_map<std::string, ConnectionStatus> conn_cache_;
     std::mutex pos_mtx_;
+    std::mutex queue_mtx_;
     std::atomic<bool> pos_dirty{false};
 
     // Internal queue for decoupling bus and network IO

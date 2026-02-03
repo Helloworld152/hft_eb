@@ -19,6 +19,7 @@
 struct OrderRtn {
     char order_ref[13];
     char symbol[32];
+    uint64_t symbol_id;  // Hash ID
     char direction;      // 'B'uy / 'S'ell
     char offset_flag;    // 'O'pen, 'C'lose, 'T'oday (平今)
     double limit_price;
@@ -31,6 +32,7 @@ struct OrderRtn {
 // 成交回报
 struct TradeRtn {
     char symbol[32];
+    uint64_t symbol_id;  // Hash ID
     char direction;      // 'B'/'S' (注意：配合开平标志判断多空方向)
     char offset_flag;    // 'O'/'C'/'T'
     double price;
@@ -42,11 +44,12 @@ struct TradeRtn {
 // 持仓明细 (每合约一个对象)
 struct PositionDetail {
     char symbol[32];
+    uint64_t symbol_id;
     
     // 多头 (Long)
     int long_td;      // 今仓
     int long_yd;      // 昨仓 (可平量)
-    double long_avg_price; // 持仓均价
+    double long_avg_price; // 持仓均价 (暂未实现复杂计算)
     
     // 空头 (Short)
     int short_td;
@@ -80,36 +83,22 @@ sequenceDiagram
 
 ## 4. 实现逻辑 (PositionModule.cpp)
 
-
-
 ### 状态管理
+使用 `std::unordered_map<uint64_t, PositionDetail> positions_;` 存储所有合约持仓，Key 为 `Symbol Hash ID` 以提升查找效率。使用 `std::mutex` 确保线程安全。
 
-使用 `std::unordered_map<std::string, PositionDetail> positions_;` 存储所有合约持仓。使用 `std::mutex` 确保线程安全。
+### 持久化 (Dump)
+- 后台线程每秒将持仓状态 Dump 到 `data/pos.json`，用于 GUI 监控或崩溃后的人工核对。
 
-
-
-### 处理规则 (当前简化版)
-
+### 处理规则
 - **买开 (Buy Open)**: `long_td += volume`。
-
 - **卖开 (Sell Open)**: `short_td += volume`。
-
 - **卖平 (Sell Close)**: 
-
   - 如果 `OffsetFlag == 'T'` (平今)，扣减 `long_td`。
-
   - 否则，优先扣减 `long_yd`，不足部分扣减 `long_td`。
-
 - **买平 (Buy Close)**: 
-
   - 如果 `OffsetFlag == 'T'` (平今)，扣减 `short_td`。
-
   - 否则，优先扣减 `short_yd`，不足部分扣减 `short_td`。
 
-
-
 ### 限制
-
-- 当前版本尚未实现平均成交价计算及盈亏 (PnL) 统计。
-
-- 尚未处理 `EVENT_RTN_ORDER` 事件。
+- **均价计算**: 目前仅维护持仓数量，尚未精确计算开仓均价（Open Avg Price）和持仓均价（Holding Avg Price）。
+- **盈亏计算**: 需要接入实时行情流 (`EVENT_MARKET_DATA`) 才能动态计算 `net_pnl`。

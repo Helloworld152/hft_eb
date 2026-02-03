@@ -181,3 +181,89 @@ private:
 
     alignas(CACHE_LINE_SIZE) T buffer_[Capacity];
 };
+
+
+// ============================================================================
+//  HFT Multi-Producer Multi-Consumer (MPMC) Bounded Queue
+//  Implementation based on Dmitri Vyukov's MPMC algorithm.
+// ============================================================================
+template <typename T, size_t Capacity>
+class MPMCRingBuffer {
+    static_assert((Capacity > 0) && ((Capacity & (Capacity - 1)) == 0), 
+                  "Capacity must be power of 2");
+
+    struct Cell {
+        std::atomic<size_t> sequence;
+        T data;
+    };
+
+public:
+    MPMCRingBuffer() {
+        for (size_t i = 0; i < Capacity; ++i) {
+            buffer_[i].sequence.store(i, std::memory_order_relaxed);
+        }
+        enqueue_pos_.store(0, std::memory_order_relaxed);
+        dequeue_pos_.store(0, std::memory_order_relaxed);
+    }
+
+    bool push(const T& data) {
+        Cell* cell;
+        size_t pos = enqueue_pos_.load(std::memory_order_relaxed);
+        
+        for (;;) {
+            cell = &buffer_[pos & (Capacity - 1)];
+            size_t seq = cell->sequence.load(std::memory_order_acquire);
+            intptr_t dif = (intptr_t)seq - (intptr_t)pos;
+
+            if (dif == 0) {
+                // Buffer slot is empty, try to reserve it
+                if (enqueue_pos_.compare_exchange_weak(pos, pos + 1, std::memory_order_relaxed)) {
+                    break;
+                }
+            } else if (dif < 0) {
+                // Buffer is full
+                return false;
+            } else {
+                // Sequence skew, reload pos
+                pos = enqueue_pos_.load(std::memory_order_relaxed);
+            }
+        }
+
+        cell->data = data;
+        cell->sequence.store(pos + 1, std::memory_order_release);
+        return true;
+    }
+
+    bool pop(T& data) {
+        Cell* cell;
+        size_t pos = dequeue_pos_.load(std::memory_order_relaxed);
+
+        for (;;) {
+            cell = &buffer_[pos & (Capacity - 1)];
+            size_t seq = cell->sequence.load(std::memory_order_acquire);
+            intptr_t dif = (intptr_t)seq - (intptr_t)(pos + 1);
+
+            if (dif == 0) {
+                // Slot has data, try to reserve
+                if (dequeue_pos_.compare_exchange_weak(pos, pos + 1, std::memory_order_relaxed)) {
+                    break;
+                }
+            } else if (dif < 0) {
+                // Buffer empty
+                return false;
+            } else {
+                // Sequence skew
+                pos = dequeue_pos_.load(std::memory_order_relaxed);
+            }
+        }
+
+        data = cell->data;
+        cell->sequence.store(pos + Capacity, std::memory_order_release);
+        return true;
+    }
+
+private:
+    alignas(CACHE_LINE_SIZE) std::atomic<size_t> enqueue_pos_;
+    alignas(CACHE_LINE_SIZE) std::atomic<size_t> dequeue_pos_;
+    alignas(CACHE_LINE_SIZE) Cell buffer_[Capacity];
+};

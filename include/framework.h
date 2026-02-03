@@ -16,95 +16,20 @@
 enum EventType {
     EVENT_MARKET_DATA = 0, // 行情
     EVENT_ORDER_REQ,       // 报单请求 (策略意图)
-    EVENT_ORDER_SEND,      // 报单指令 (经风控扶准)
+    EVENT_ORDER_SEND,      // 报单指令 (经风控批准)
     EVENT_RTN_ORDER,       // 报单回报 (交易所状态)
     EVENT_RTN_TRADE,       // 成交回报 (交易所成交)
-    EVENT_POS_UPDATE,      // 持仓更新
+    EVENT_POS_UPDATE,      // 持仓更新 (PositionModule -> Others)
+    EVENT_RSP_POS,         // 持仓查询回报 (CtpReal -> PositionModule)
     EVENT_KLINE,           // K线数据
     EVENT_SIGNAL,          // 因子信号 (Factor Signal)
     EVENT_QRY_POS,         // 主动查询持仓请求
     EVENT_QRY_ACC,         // 主动查询资金请求
     EVENT_CANCEL_REQ,      // 撤单请求
     EVENT_ACC_UPDATE,      // 资金更新回报
+    EVENT_CONN_STATUS,     // 连接状态更新
     EVENT_LOG,             // 日志
     MAX_EVENTS
-};
-
-struct AccountDetail {
-    char broker_id[11];
-    char account_id[13];
-    double balance;         // 昨结 + 入金 - 出金
-    double available;       // 可用资金
-    double margin;          // 占用保证金
-    double close_pnl;       // 平仓盈亏
-    double position_pnl;    // 持仓盈亏
-};
-
-struct OrderReq {
-    char symbol[32];
-    uint64_t symbol_id;
-    char direction;   // 'B'uy or 'S'ell
-    char offset_flag; // 'O'pen, 'C'lose, 'T'oday (上期所平今)
-    double price;
-    int volume;
-};
-
-struct CancelReq {
-    char symbol[32];
-    char order_ref[13];
-};
-
-// 报单回报
-struct OrderRtn {
-    char order_ref[13];
-    char symbol[32];
-    uint64_t symbol_id;
-    char direction;      // 'B'/'S'
-    char offset_flag;    // 'O'/'C'/'T'
-    double limit_price;
-    int volume_total;    // 报单总量
-    int volume_traded;   // 已成交量
-    char status;         // '0':全部成交, '1':部分成交, '3':未成交, '5':已退单
-    char status_msg[81];
-};
-
-// 成交回报
-struct TradeRtn {
-    char symbol[32];
-    uint64_t symbol_id;
-    char direction;      // 'B'/'S'
-    char offset_flag;    // 'O'/'C'/'T'
-    double price;
-    int volume;
-    char trade_id[21];
-    char order_ref[13];
-};
-
-// 持仓明细
-struct PositionDetail {
-    char symbol[32];
-    uint64_t symbol_id;
-    
-    // 多头
-    int long_td;
-    int long_yd;
-    double long_avg_price;
-    
-    // 假头
-    int short_td;
-    int short_yd;
-    double short_avg_price;
-    
-    double net_pnl;
-};
-
-// 因子信号数据结构
-struct SignalRecord {
-    char source_id[32];    // 来源节点 ID (如 "FACTOR_RSI")
-    char symbol[32];
-    char factor_name[32];  // 因子/信号名称
-    double value;          // 信号值
-    uint64_t timestamp;    // 产生时间
 };
 
 // ==========================================

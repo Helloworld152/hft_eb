@@ -52,39 +52,49 @@ graph TD
 - **Plugins (模块)**:
     - `replay`: 历史数据/实时数据回放模块。
     - `strategy`: 交易策略实现 (支持普通策略和策略树)。
-    - `risk`: 事前风控模块。
+    - `risk`: 事前风控模块，支持流控与合规检查。
     - `trade` / `ctp_real`: 模拟/实盘交易执行模块。
-    - `position`: 实时持仓管理。
+    - `position`: 实时持仓管理，区分今昨仓。
     - `kline`: K线生成模块 (1s, 1m, etc.)。
-    - `monitor`: 系统监控与指标导出 (Prometheus)。
+    - `monitor`: 系统监控与指令下发 (WebSocket + ZMQ)，支持鉴权。
 
 ### 独立录制器 (hft_md)
 位于 `hft_md/` 目录，是一个独立的行情录制进程。
 - **功能**: 连接 CTP 行情接口，将 Tick 数据直接写入 Mmap 文件。
 - **特性**: Crash-Safe，支持断点续传，为交易引擎提供 Zero Copy 的实时数据源。
+- **快照**: 提供基于 SeqLock 的 `/dev/shm` 实时快照，供风控随机访问。
 
 ## 高级特性
 
-### 策略树 (Strategy Tree)
+### 1. 策略树 (Strategy Tree)
 `StrategyTreeModule` 是一个强大的策略容器，支持将复杂的交易逻辑拆解为多个独立的原子节点（Node）。
 - **动态组合**: 支持通过配置文件动态加载和组合多个策略节点（如：因子节点、信号节点、执行节点）。
 - **节点间通信**: 内置高速信号总线，支持节点间直接传递 `SignalRecord`，实现“因子 -> 信号 -> 执行”的流水线处理。
-- **统一上下文**: 为子节点提供统一的 `StrategyContext`，屏蔽底层 EventBus 细节。
+
+### 2. 极速行情流 (High-Speed Data Stream)
+- **线性日志 (Append Log)**: 基于 Mmap 的 `.dat` + `.meta` 结构，支持历史回溯与亚微秒级实时转发。
+- **实时快照 (Snapshot)**: 独立的 SHM 区域，仅保存最新 Tick，支持 O(1) 无锁读取，适用于预风控。
+
+### 3. 安全监控 (Secure Monitor)
+- **多账户**: 支持同时监控多个资金账号。
+- **鉴权**: 强制 Token 验证机制，防止非法连接。
 
 ## 目录结构
 ```
 hft_eb/
 ├── bin/                     # 编译产出
 ├── conf/                    # 配置文件 (.yaml)
-├── core/                    # 核心库 (IPC, Protocol)
+├── core/                    # 核心库 (IPC, Protocol, SHM)
 ├── data/                    # 行情数据存储 (Mmap)
+├── docs/                    # 设计文档 (Design Docs)
 ├── hft_md/                  # 独立行情录制器项目
 ├── include/                 # 引擎对外接口
 ├── modules/                 # 业务插件源码
 │   ├── strategy/            # 策略实现 (Grid, StrategyTree)
 │   ├── kline/               # K线生成
 │   ├── monitor/             # 监控模块
-│   └── py_strategy/         # Python 策略支持
+│   ├── risk/                # 风控模块
+│   └── position/            # 持仓管理
 ├── src/                     # 引擎源码
 ├── third_party/             # 第三方依赖 (CTP)
 └── build_release.sh         # 构建脚本
@@ -97,7 +107,9 @@ hft_eb/
 - C++17 Compiler (GCC/Clang)
 - CMake >= 3.10
 - CTP API (已包含在 `third_party/` 中)
-- rapidjson
+- rapidjson / nlohmann_json
+- ixwebsocket (Websocket Monitor)
+- libzmq (ZMQ Monitor)
 
 ### 2. 编译
 

@@ -141,7 +141,7 @@ target_link_libraries(mod_risk PRIVATE hft_core -Wl,--no-as-needed pthread -Wl,-
 # 5. 编译插件 E: Position Manager
 add_library(mod_position SHARED modules/position/position_module.cpp)
 target_include_directories(mod_position PRIVATE include)
-target_link_libraries(mod_position PRIVATE hft_core)
+target_link_libraries(mod_position PRIVATE hft_core nlohmann_json::nlohmann_json)
 
 # 6. 编译插件 F: Monitor (WebSocket + ZMQ)
 add_library(mod_monitor SHARED modules/monitor/monitor_module.cpp)

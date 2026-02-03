@@ -20,6 +20,18 @@ public:
     // Internal helper to send order
     void send_order(const OrderReq* req);
     void cancel_order(const CancelReq* req);
+    
+    // Helper to publish connection status
+    void publish_status(char status, const char* msg) {
+        if (!bus_) return;
+        ConnectionStatus cs;
+        memset(&cs, 0, sizeof(cs));
+        strncpy(cs.account_id, user_id_.c_str(), 15);
+        strncpy(cs.source, "CTP_TD", 15);
+        cs.status = status;
+        if (msg) strncpy(cs.msg, msg, 63);
+        bus_->publish(EVENT_CONN_STATUS, &cs);
+    }
 
 private:
     // Config
@@ -53,6 +65,9 @@ private:
         void OnErrRtnOrderInsert(CThostFtdcInputOrderField *pInputOrder, CThostFtdcRspInfoField *pRspInfo) override;
         void OnRspQryInvestorPosition(CThostFtdcInvestorPositionField *pInvestorPosition, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast) override;
         void OnRspQryTradingAccount(CThostFtdcTradingAccountField *pTradingAccount, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast) override;
+
+        int front_id_ = 0;
+        int session_id_ = 0;
 
     private:
         CtpRealModule* parent_;
@@ -131,8 +146,11 @@ void CtpRealModule::init(EventBus* bus, const ConfigMap& config) {
 
 void CtpRealModule::start() {
     if (!td_front_.empty()) {
-        std::cout << "[CTP-Trade] Connecting to TD Front: " << td_front_ << std::endl;
-        td_api_ = CThostFtdcTraderApi::CreateFtdcTraderApi("./flow_log/td_");
+        // [CRITICAL] 每个账号必须有独立的流文件目录，否则多实例运行会数据串扰！
+        std::string flow_path = "./flow_log/td_" + user_id_ + "_";
+        std::cout << "[CTP-Trade] [" << user_id_ << "] Connecting to TD Front with flow path: " << flow_path << std::endl;
+        
+        td_api_ = CThostFtdcTraderApi::CreateFtdcTraderApi(flow_path.c_str());
         td_spi_ = new TraderSpi(this);
         td_api_->RegisterSpi(td_spi_);
         td_api_->RegisterFront(const_cast<char*>(td_front_.c_str()));
@@ -150,9 +168,14 @@ void CtpRealModule::stop() {
     }
     if (td_spi_) { delete td_spi_; td_spi_ = nullptr; }
     logged_in_ = false;
+    publish_status('0', "Stopped");
 }
 
 void CtpRealModule::send_order(const OrderReq* req) {
+    if (strlen(req->account_id) > 0 && strcmp(req->account_id, user_id_.c_str()) != 0) {
+        return; // Not for this account
+    }
+
     if (!td_api_ || !logged_in_.load()) {
         std::cerr << "[CTP-Trade] Error: Trader API not ready or not logged in." << std::endl;
         return;
@@ -195,7 +218,23 @@ void CtpRealModule::send_order(const OrderReq* req) {
 }
 
 void CtpRealModule::cancel_order(const CancelReq* req) {
-    if (!td_api_ || !logged_in_.load()) return;
+    if (debug_) {
+        std::cout << "[CTP-Trade] [" << user_id_ << "] 收到撤单请求: Acc=" << req->account_id 
+                  << " Symbol=" << req->symbol << " Ref=" << req->order_ref << std::endl;
+    }
+
+    if (strlen(req->account_id) > 0 && strcmp(req->account_id, user_id_.c_str()) != 0) {
+        if (debug_) {
+            std::cout << "[CTP-Trade] [" << user_id_ << "] 忽略撤单请求: 目标账户不匹配 (" 
+                      << req->account_id << " != " << user_id_ << ")" << std::endl;
+        }
+        return;
+    }
+
+    if (!td_api_ || !logged_in_.load()) {
+        std::cerr << "[CTP-Trade] 撤单失败: 未登录或 API 未就绪" << std::endl;
+        return;
+    }
 
     CThostFtdcInputOrderActionField action = {0};
     strncpy(action.BrokerID, broker_id_.c_str(), sizeof(action.BrokerID) - 1);
@@ -203,13 +242,19 @@ void CtpRealModule::cancel_order(const CancelReq* req) {
     strncpy(action.InstrumentID, req->symbol, sizeof(action.InstrumentID) - 1);
     strncpy(action.OrderRef, req->order_ref, sizeof(action.OrderRef) - 1);
     
+    // 关键：CTP 撤单通常需要 FrontID 和 SessionID，或者 ExchangeID + OrderSysID
+    // 仅凭 OrderRef 撤单只能撤销“尚未报入交易所但在本地排队”的单，或者当前会话的单
+    // 这是一个潜在的隐患点，如果需要更稳健的撤单，需要维护 OrderRef -> (FrontID, SessionID) 的映射
+    action.FrontID = td_spi_->front_id_;
+    action.SessionID = td_spi_->session_id_;
+    
     action.ActionFlag = THOST_FTDC_AF_Delete;
 
     int ret = td_api_->ReqOrderAction(&action, req_id_++);
     if (ret != 0) {
-        std::cerr << "[CTP-Trade] Cancel Failed: " << ret << " for Ref=" << req->order_ref << std::endl;
+        std::cerr << "[CTP-Trade] 撤单请求发送失败: Error=" << ret << " Ref=" << req->order_ref << std::endl;
     } else if (debug_) {
-        std::cout << "[CTP-Trade] Cancel Sent for Ref=" << req->order_ref << std::endl;
+        std::cout << "[CTP-Trade] 撤单请求已发送: Ref=" << req->order_ref << std::endl;
     }
 }
 
@@ -219,6 +264,7 @@ void CtpRealModule::cancel_order(const CancelReq* req) {
 
 void CtpRealModule::TraderSpi::OnFrontConnected() {
     std::cout << "[CTP-Trade] Front Connected. Skipping Auth, Logging in..." << std::endl;
+    parent_->publish_status('1', "Connected");
     
     // Skip Authentication for environments that don't need it
     // Or check if auth_code is empty
@@ -243,14 +289,17 @@ void CtpRealModule::TraderSpi::OnFrontConnected() {
 void CtpRealModule::TraderSpi::OnFrontDisconnected(int nReason) {
     std::cerr << "[CTP-Trade] Front Disconnected. Reason: " << nReason << std::endl;
     parent_->logged_in_ = false;
+    parent_->publish_status('0', "Disconnected");
 }
 
 void CtpRealModule::TraderSpi::OnRspAuthenticate(CThostFtdcRspAuthenticateField *pRspAuthenticateField, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast) {
     if (pRspInfo && pRspInfo->ErrorID != 0) {
         std::cerr << "[CTP-Trade] Authenticate Failed: " << pRspInfo->ErrorMsg << std::endl;
+        parent_->publish_status('4', pRspInfo->ErrorMsg);
         return;
     }
     if (parent_->debug_) std::cout << "[CTP-Trade] Authenticated. Logging in..." << std::endl;
+    parent_->publish_status('2', "Authenticated");
     
     CThostFtdcReqUserLoginField req = {0};
     strncpy(req.BrokerID, parent_->broker_id_.c_str(), sizeof(req.BrokerID) - 1);
@@ -262,10 +311,18 @@ void CtpRealModule::TraderSpi::OnRspAuthenticate(CThostFtdcRspAuthenticateField 
 void CtpRealModule::TraderSpi::OnRspUserLogin(CThostFtdcRspUserLoginField *pRspUserLogin, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast) {
     if (pRspInfo && pRspInfo->ErrorID != 0) {
         std::cerr << "[CTP-Trade] Login Failed: " << pRspInfo->ErrorMsg << std::endl;
+        parent_->publish_status('5', pRspInfo->ErrorMsg);
         return;
     }
+    
+    // 保存会话信息，用于后续撤单
+    this->front_id_ = pRspUserLogin->FrontID;
+    this->session_id_ = pRspUserLogin->SessionID;
+
     std::cout << "[CTP-Trade] Login Success. TradingDay: " << pRspUserLogin->TradingDay 
+              << ", FrontID=" << front_id_ << ", SessionID=" << session_id_
               << ". Confirming Settlement..." << std::endl;
+    parent_->publish_status('3', "LoggedIn");
     
     CThostFtdcSettlementInfoConfirmField confirm = {0};
     strncpy(confirm.BrokerID, parent_->broker_id_.c_str(), sizeof(confirm.BrokerID) - 1);
@@ -289,26 +346,37 @@ void CtpRealModule::TraderSpi::OnRspQryInvestorPosition(CThostFtdcInvestorPositi
     }
     if (!pInvestorPosition) return;
     
+    if (parent_->debug_) {
+        std::cout << "[CTP-Trade] [POS_RAW] User=" << parent_->user_id_ 
+                  << " Inst=" << pInvestorPosition->InstrumentID 
+                  << " Dir=" << pInvestorPosition->PosiDirection
+                  << " Vol=" << pInvestorPosition->Position
+                  << " Td=" << pInvestorPosition->TodayPosition 
+                  << " Cost=" << pInvestorPosition->PositionCost << std::endl;
+    }
+    
     PositionDetail pos = {0};
     strncpy(pos.symbol, pInvestorPosition->InstrumentID, 31);
     pos.symbol_id = SymbolManager::instance().get_id(pos.symbol);
+    strncpy(pos.account_id, parent_->user_id_.c_str(), 15);
     
-    // CTP Position: 2=Buy(Long), 3=Sell(Short)
-    if (pInvestorPosition->PosiDirection == THOST_FTDC_PD_Long) {
+    // CTP Position: 2=Buy(Long), 3=Sell(Short), 1=Net
+    if (pInvestorPosition->PosiDirection == THOST_FTDC_PD_Long || pInvestorPosition->PosiDirection == THOST_FTDC_PD_Net) {
         pos.long_td = pInvestorPosition->TodayPosition;
         pos.long_yd = pInvestorPosition->Position - pInvestorPosition->TodayPosition;
-        pos.long_avg_price = pInvestorPosition->PositionCost / (pInvestorPosition->Position * 10.0); // 假设乘数为10，实际应从合约说明获取
-        // 修正：CTP 的 PositionCost 是总成本，需要除以 (持仓量 * 合约乘数)
-        // 这里暂时硬编码，后续应从 SymbolManager 获取乘数
+        double total_vol = pInvestorPosition->Position * 10.0; 
+        pos.long_avg_price = (total_vol > 0.1) ? (pInvestorPosition->PositionCost / total_vol) : 0.0;
     } else if (pInvestorPosition->PosiDirection == THOST_FTDC_PD_Short) {
         pos.short_td = pInvestorPosition->TodayPosition;
         pos.short_yd = pInvestorPosition->Position - pInvestorPosition->TodayPosition;
-        pos.short_avg_price = pInvestorPosition->PositionCost / (pInvestorPosition->Position * 10.0);
+        double total_vol = pInvestorPosition->Position * 10.0;
+        pos.short_avg_price = (total_vol > 0.1) ? (pInvestorPosition->PositionCost / total_vol) : 0.0;
     }
 
     pos.net_pnl = pInvestorPosition->PositionProfit;
 
-    parent_->bus_->publish(EVENT_POS_UPDATE, &pos);
+    // [CRITICAL] 发送原始回报给 PositionModule，而不是直接广播 POS_UPDATE
+    parent_->bus_->publish(EVENT_RSP_POS, &pos);
 }
 
 void CtpRealModule::TraderSpi::OnRspQryTradingAccount(CThostFtdcTradingAccountField *pTradingAccount, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast) {
@@ -347,6 +415,7 @@ void CtpRealModule::TraderSpi::OnRtnOrder(CThostFtdcOrderField *pOrder) {
     strncpy(rtn.order_ref, pOrder->OrderRef, 12);
     strncpy(rtn.symbol, pOrder->InstrumentID, 31);
     rtn.symbol_id = SymbolManager::instance().get_id(rtn.symbol);
+    strncpy(rtn.account_id, parent_->user_id_.c_str(), 15);
     rtn.direction = (pOrder->Direction == THOST_FTDC_D_Buy) ? 'B' : 'S';
     
     if (pOrder->CombOffsetFlag[0] == THOST_FTDC_OF_Open) rtn.offset_flag = 'O';
@@ -379,6 +448,7 @@ void CtpRealModule::TraderSpi::OnRtnTrade(CThostFtdcTradeField *pTrade) {
     TradeRtn rtn;
     strncpy(rtn.symbol, pTrade->InstrumentID, 31);
     rtn.symbol_id = SymbolManager::instance().get_id(rtn.symbol);
+    strncpy(rtn.account_id, parent_->user_id_.c_str(), 15);
     rtn.direction = (pTrade->Direction == THOST_FTDC_D_Buy) ? 'B' : 'S';
     
     if (pTrade->OffsetFlag == THOST_FTDC_OF_Open) rtn.offset_flag = 'O';
@@ -401,6 +471,7 @@ void CtpRealModule::TraderSpi::OnRspOrderInsert(CThostFtdcInputOrderField *pInpu
             std::memset(&rtn, 0, sizeof(rtn));
             strncpy(rtn.order_ref, pInputOrder->OrderRef, 12);
             strncpy(rtn.symbol, pInputOrder->InstrumentID, 31);
+            strncpy(rtn.account_id, parent_->user_id_.c_str(), 15);
             rtn.status = '5'; 
             strncpy(rtn.status_msg, pRspInfo->ErrorMsg, 80);
             parent_->bus_->publish(EVENT_RTN_ORDER, &rtn);
