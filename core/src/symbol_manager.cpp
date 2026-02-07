@@ -31,16 +31,28 @@ void SymbolManager::load(const std::string& path) {
     std::string line;
     while (std::getline(file, line)) {
         if (line.empty() || line[0] == '#') continue;
-        auto delim = line.find(':');
-        if (delim == std::string::npos) continue;
+        auto first = line.find(':');
+        if (first == std::string::npos) continue;
 
         try {
-            uint64_t id = std::stoull(line.substr(0, delim));
-            std::string symbol = line.substr(delim + 1);
+            uint64_t id = std::stoull(line.substr(0, first));
+            std::string rest = line.substr(first + 1);
+            auto second = rest.find(':');
+            std::string symbol = (second == std::string::npos) ? rest : rest.substr(0, second);
             symbol.erase(symbol.find_last_not_of(" \n\r\t") + 1);
+
+            double multiplier = 1.0;
+            if (second != std::string::npos) {
+                std::string mul_str = rest.substr(second + 1);
+                mul_str.erase(0, mul_str.find_first_not_of(" \t"));
+                mul_str.erase(mul_str.find_last_not_of(" \n\r\t") + 1);
+                if (!mul_str.empty())
+                    multiplier = std::stod(mul_str);
+            }
 
             id_to_symbol_[id] = symbol;
             symbol_to_id_[symbol] = id;
+            id_to_multiplier_[id] = multiplier;
         } catch (...) {
             continue;
         }
@@ -63,4 +75,16 @@ const char* SymbolManager::get_symbol(uint64_t id) const {
         return it->second.c_str();
     }
     return "UNKNOWN";
+}
+
+double SymbolManager::get_multiplier(uint64_t id) const {
+    auto it = id_to_multiplier_.find(id);
+    if (it != id_to_multiplier_.end())
+        return it->second;
+    return 1.0;
+}
+
+double SymbolManager::get_multiplier(const char* symbol) const {
+    uint64_t id = get_id(symbol);
+    return id ? get_multiplier(id) : 1.0;
 }

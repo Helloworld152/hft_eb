@@ -1,6 +1,7 @@
 #include "framework.h"
 #include "protocol.h"
 #include "mmap_util.h"
+#include "market_snapshot.h"
 #include <iostream>
 #include <thread>
 #include <atomic>
@@ -34,6 +35,7 @@ public:
     void stop() override {
         running_ = false;
         if (thread_.joinable()) thread_.join();
+        MarketSnapshot::instance().clear();
     }
 
 private:
@@ -101,7 +103,7 @@ private:
         }
         tick_count_++;
 
-        // 发布到总线（测试 EventBus 性能）
+        MarketSnapshot::instance().update(rec);
         bus_->publish(EVENT_MARKET_DATA, const_cast<TickRecord*>(&rec));
     }
 

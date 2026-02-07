@@ -80,7 +80,7 @@ include_directories(core/include)
 # ==========================================
 # 0. 核心基础设施库 (共享单例)
 # ==========================================
-add_library(hft_core SHARED core/src/symbol_manager.cpp)
+add_library(hft_core SHARED core/src/symbol_manager.cpp core/src/market_snapshot.cpp)
 
 # 1. 编译插件 A: CTP (模拟)
 add_library(mod_ctp SHARED modules/ctp/ctp_module.cpp)
@@ -162,6 +162,11 @@ target_link_libraries(mod_replay PRIVATE hft_core yaml-cpp)
 add_library(mod_kline SHARED modules/kline/kline_module.cpp)
 target_include_directories(mod_kline PRIVATE include core/include)
 target_link_libraries(mod_kline PRIVATE hft_core)
+
+# 11. 编译插件 I: SweepTrader (扫单/TWAP)
+add_library(mod_sweep_trader SHARED modules/sweep_trader/sweep_trader_module.cpp)
+target_include_directories(mod_sweep_trader PRIVATE include core/include)
+target_link_libraries(mod_sweep_trader PRIVATE hft_core)
 
 # 7. 编译主程序
 add_executable(hft_engine src/main.cpp src/engine.cpp)

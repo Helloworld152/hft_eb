@@ -2,7 +2,7 @@ import json
 import yaml
 import sys
 
-ins_file = "conf/latest_ins_cache.json"
+ins_file = "/tmp/latest_ins_cache.json"
 symbols_file = "conf/symbols.txt"
 config_file = "hft_md/conf/config.yaml"
 
@@ -17,42 +17,38 @@ except Exception as e:
 
 print(f"Total entries: {len(data)}")
 
-contracts = []
+# (symbol, multiplier); 去重时同 symbol 保留首次出现的乘数
+contract_pairs = {}
 skipped_expired = 0
 skipped_type = 0
 
 for key, val in data.items():
     # 1. 过滤过期
-    if val.get('expired', True): 
+    if val.get('expired', True):
         skipped_expired += 1
         continue
-    
+
     # 2. 过滤类型 (只保留期货 FUTURE)
-    # 快期分类: FUTURE, FUTURE_INDEX, FUTURE_OPTION, COMBINE
     cls = val.get('class', '')
     if cls != 'FUTURE':
         skipped_type += 1
         continue
 
     # 3. 提取 CTP InstrumentID
-    # 快期格式: CFFEX.IF2406 -> CTP: IF2406
-    # 也有可能是 DCE.m2409 -> m2409
     raw_id = val.get('instrument_id', '')
-    
     if '.' in raw_id:
-        parts = raw_id.split('.')
-        ctp_id = parts[-1]
+        ctp_id = raw_id.split('.')[-1]
     else:
         ctp_id = raw_id
 
-    # 简单验证: CTP 合约通常包含数字
-    if not any(char.isdigit() for char in ctp_id):
+    if not any(c.isdigit() for c in ctp_id):
         continue
 
-    contracts.append(ctp_id)
+    multiplier = val.get('volume_multiple', 1)
+    if ctp_id not in contract_pairs:
+        contract_pairs[ctp_id] = multiplier
 
-# 去重并排序
-contracts = sorted(list(set(contracts)))
+contracts = sorted(contract_pairs.keys())
 
 print(f"Selected {len(contracts)} contracts (Skipped: {skipped_expired} expired, {skipped_type} non-future)")
 
@@ -60,11 +56,11 @@ if len(contracts) == 0:
     print("No contracts found! Check filters.")
     sys.exit(1)
 
-# --- Step 1: Write symbols.txt ---
+# --- Step 1: Write symbols.txt (id:symbol:multiplier) ---
 with open(symbols_file, "w") as f:
     start_id = 10000001
     for i, c in enumerate(contracts):
-        f.write(f"{start_id + i}:{c}\n")
+        f.write(f"{start_id + i}:{c}:{contract_pairs[c]}\n")
 print(f"Updated {symbols_file}")
 
 # --- Step 2: Update config.yaml ---
