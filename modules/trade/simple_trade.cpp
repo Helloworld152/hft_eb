@@ -4,7 +4,7 @@
 
 class SimpleTradeModule : public IModule {
 public:
-    void init(EventBus* bus, const ConfigMap& config) override {
+    void init(EventBus* bus, const ConfigMap& config, ITimerService* timer_svc = nullptr) override {
         bus_ = bus;
         
         // 读取配置中的ID，默认为 SimpleTrade

@@ -1,19 +1,21 @@
 #include "../../include/framework.h"
 #include "../../core/include/symbol_manager.h"
+#include "../../core/include/order_manager.h"
 #include "ThostFtdcTraderApi.h"
 #include <thread>
 #include <chrono>
 #include <atomic>
 #include <cstring>
 #include <iostream>
-#include <mutex>
+#include <vector>
+#include <sstream>
 
 class CtpRealModule : public IModule {
 public:
     CtpRealModule();
     virtual ~CtpRealModule();
 
-    void init(EventBus* bus, const ConfigMap& config) override;
+    void init(EventBus* bus, const ConfigMap& config, ITimerService* timer_svc = nullptr) override;
     void start() override;
     void stop() override;
 
@@ -41,14 +43,28 @@ private:
     std::string password_;
     std::string app_id_;
     std::string auth_code_;
+    // 重连时间段配置：支持多组，格式 "HH:MM:SS-HH:MM:SS,HH:MM:SS-HH:MM:SS"
+    // 例如: "09:00:00-15:00:00,21:00:00-02:30:00" (白天+夜盘)
+    std::vector<std::pair<int, int>> reconnect_time_ranges_;  // 存储时间段对 (start_time, end_time) 整数格式 HHMMSS
+    int reconnect_delay_sec_ = 3;  // 重连延迟秒数
 
     EventBus* bus_ = nullptr;
-    
+    ITimerService* timer_svc_ = nullptr;
+
     // CTP Trader API
     CThostFtdcTraderApi* td_api_ = nullptr;
 
     // Request ID counter
     std::atomic<int> req_id_{0};
+    
+    // Helper: 解析重连时间段配置字符串
+    void parse_reconnect_times(const std::string& times_str);
+    // Helper: 检查当前时间是否在重连时间范围内
+    bool is_in_reconnect_time() const;
+    // Helper: 守护线程主循环
+    void monitor_loop();
+    // Helper: 执行真正的 API 重启逻辑
+    void do_connect();
 
     class TraderSpi : public CThostFtdcTraderSpi {
     public:
@@ -90,8 +106,9 @@ CtpRealModule::~CtpRealModule() {
     stop();
 }
 
-void CtpRealModule::init(EventBus* bus, const ConfigMap& config) {
+void CtpRealModule::init(EventBus* bus, const ConfigMap& config, ITimerService* timer_svc) {
     bus_ = bus;
+    timer_svc_ = timer_svc;
 
     if (config.count("td_front")) td_front_ = config.at("td_front");
     if (config.count("broker_id")) broker_id_ = config.at("broker_id");
@@ -99,6 +116,23 @@ void CtpRealModule::init(EventBus* bus, const ConfigMap& config) {
     if (config.count("password")) password_ = config.at("password");
     if (config.count("app_id")) app_id_ = config.at("app_id");
     if (config.count("auth_code")) auth_code_ = config.at("auth_code");
+    
+    // 解析重连时间段配置
+    // 支持格式1: reconnect_times="09:00:00-15:00:00,21:00:00-02:30:00" (多组，逗号分隔)
+    // 支持格式2: reconnect_start + reconnect_end (兼容旧配置，单组)
+    if (config.count("reconnect_times")) {
+        parse_reconnect_times(config.at("reconnect_times"));
+    } else if (config.count("reconnect_start") && config.count("reconnect_end")) {
+        // 兼容旧配置格式
+        std::string start = config.at("reconnect_start");
+        std::string end = config.at("reconnect_end");
+        parse_reconnect_times(start + "-" + end);
+    }
+    
+    if (config.count("reconnect_delay")) {
+        reconnect_delay_sec_ = std::stoi(config.at("reconnect_delay"));
+        if (reconnect_delay_sec_ < 1) reconnect_delay_sec_ = 1;
+    }
     
     if (config.count("debug")) {
         std::string val = config.at("debug");
@@ -113,7 +147,7 @@ void CtpRealModule::init(EventBus* bus, const ConfigMap& config) {
         this->send_order(static_cast<OrderReq*>(data));
     });
 
-    bus_->subscribe(EVENT_CANCEL_REQ, [this](void* data) {
+    bus_->subscribe(EVENT_CANCEL_SEND, [this](void* data) {
         this->cancel_order(static_cast<CancelReq*>(data));
     });
 
@@ -123,7 +157,9 @@ void CtpRealModule::init(EventBus* bus, const ConfigMap& config) {
         strncpy(req.BrokerID, broker_id_.c_str(), sizeof(req.BrokerID)-1);
         strncpy(req.InvestorID, user_id_.c_str(), sizeof(req.InvestorID)-1);
         int ret = td_api_->ReqQryTradingAccount(&req, req_id_++);
-        std::cout << "[CTP-Trade] 请求查询资金, ret=" << ret << std::endl;
+        if (debug_) {
+            std::cout << "[CTP-Trade] 请求查询资金, ret=" << ret << std::endl;
+        }
     });
 
     // Subscribe to Query Commands (from Monitor)
@@ -145,18 +181,16 @@ void CtpRealModule::init(EventBus* bus, const ConfigMap& config) {
 }
 
 void CtpRealModule::start() {
-    if (!td_front_.empty()) {
-        // [CRITICAL] 每个账号必须有独立的流文件目录，否则多实例运行会数据串扰！
-        std::string flow_path = "./flow_log/td_" + user_id_ + "_";
-        std::cout << "[CTP-Trade] [" << user_id_ << "] Connecting to TD Front with flow path: " << flow_path << std::endl;
-        
-        td_api_ = CThostFtdcTraderApi::CreateFtdcTraderApi(flow_path.c_str());
-        td_spi_ = new TraderSpi(this);
-        td_api_->RegisterSpi(td_spi_);
-        td_api_->RegisterFront(const_cast<char*>(td_front_.c_str()));
-        td_api_->SubscribePublicTopic(THOST_TERT_QUICK);
-        td_api_->SubscribePrivateTopic(THOST_TERT_QUICK);
-        td_api_->Init();
+    if (td_front_.empty()) return;
+
+    std::cout << "[CTP-Trade] Module started. Using engine timer for reconnect." << std::endl;
+    if (timer_svc_) {
+        timer_svc_->add_timer(reconnect_delay_sec_, [this]() {
+            if (!logged_in_.load() && is_in_reconnect_time()) {
+                if (debug_) std::cout << "[CTP-Trade] [Timer] 满足重连周期，尝试 do_connect" << std::endl;
+                do_connect();
+            }
+        });
     }
 }
 
@@ -186,7 +220,8 @@ void CtpRealModule::send_order(const OrderReq* req) {
     strncpy(order.InvestorID, user_id_.c_str(), sizeof(order.InvestorID) - 1);
     strncpy(order.InstrumentID, req->symbol, sizeof(order.InstrumentID) - 1);
     
-    snprintf(order.OrderRef, sizeof(order.OrderRef), "%d", req_id_++);
+    // 直接使用 OrderManager 分配好的映射 ID
+    strncpy(order.OrderRef, req->order_ref, sizeof(order.OrderRef) - 1);
     
     order.OrderPriceType = THOST_FTDC_OPT_LimitPrice;
     order.Direction = (req->direction == 'B') ? THOST_FTDC_D_Buy : THOST_FTDC_D_Sell;
@@ -290,6 +325,8 @@ void CtpRealModule::TraderSpi::OnFrontDisconnected(int nReason) {
     std::cerr << "[CTP-Trade] Front Disconnected. Reason: " << nReason << std::endl;
     parent_->logged_in_ = false;
     parent_->publish_status('0', "Disconnected");
+    
+    // Monitor thread will handle reconnection logic automatically
 }
 
 void CtpRealModule::TraderSpi::OnRspAuthenticate(CThostFtdcRspAuthenticateField *pRspAuthenticateField, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast) {
@@ -319,10 +356,11 @@ void CtpRealModule::TraderSpi::OnRspUserLogin(CThostFtdcRspUserLoginField *pRspU
     this->front_id_ = pRspUserLogin->FrontID;
     this->session_id_ = pRspUserLogin->SessionID;
 
+    std::string msg = "MaxOrderRef:" + std::string(pRspUserLogin->MaxOrderRef);
     std::cout << "[CTP-Trade] Login Success. TradingDay: " << pRspUserLogin->TradingDay 
               << ", FrontID=" << front_id_ << ", SessionID=" << session_id_
-              << ". Confirming Settlement..." << std::endl;
-    parent_->publish_status('3', "LoggedIn");
+              << ", " << msg << ". Confirming Settlement..." << std::endl;
+    parent_->publish_status('3', msg.c_str());
     
     CThostFtdcSettlementInfoConfirmField confirm = {0};
     strncpy(confirm.BrokerID, parent_->broker_id_.c_str(), sizeof(confirm.BrokerID) - 1);
@@ -359,18 +397,19 @@ void CtpRealModule::TraderSpi::OnRspQryInvestorPosition(CThostFtdcInvestorPositi
     strncpy(pos.symbol, pInvestorPosition->InstrumentID, 31);
     pos.symbol_id = SymbolManager::instance().get_id(pos.symbol);
     strncpy(pos.account_id, parent_->user_id_.c_str(), 15);
+    strncpy(pos.exchange_id, pInvestorPosition->ExchangeID, 8); // 透传交易所ID
+    pos.direction = pInvestorPosition->PosiDirection; // 记录原始方向
+    pos.position_date = pInvestorPosition->PositionDate; // 记录持仓日期标识
     
     // CTP Position: 2=Buy(Long), 3=Sell(Short), 1=Net
     if (pInvestorPosition->PosiDirection == THOST_FTDC_PD_Long || pInvestorPosition->PosiDirection == THOST_FTDC_PD_Net) {
         pos.long_td = pInvestorPosition->TodayPosition;
         pos.long_yd = pInvestorPosition->Position - pInvestorPosition->TodayPosition;
-        double total_vol = pInvestorPosition->Position * 10.0; 
-        pos.long_avg_price = (total_vol > 0.1) ? (pInvestorPosition->PositionCost / total_vol) : 0.0;
+        // 不计算持仓均价，保持为0
     } else if (pInvestorPosition->PosiDirection == THOST_FTDC_PD_Short) {
         pos.short_td = pInvestorPosition->TodayPosition;
         pos.short_yd = pInvestorPosition->Position - pInvestorPosition->TodayPosition;
-        double total_vol = pInvestorPosition->Position * 10.0;
-        pos.short_avg_price = (total_vol > 0.1) ? (pInvestorPosition->PositionCost / total_vol) : 0.0;
+        // 不计算持仓均价，保持为0
     }
 
     pos.net_pnl = pInvestorPosition->PositionProfit;
@@ -416,6 +455,7 @@ void CtpRealModule::TraderSpi::OnRtnOrder(CThostFtdcOrderField *pOrder) {
     strncpy(rtn.symbol, pOrder->InstrumentID, 31);
     rtn.symbol_id = SymbolManager::instance().get_id(rtn.symbol);
     strncpy(rtn.account_id, parent_->user_id_.c_str(), 15);
+    strncpy(rtn.exchange_id, pOrder->ExchangeID, 8); // 透传交易所ID
     rtn.direction = (pOrder->Direction == THOST_FTDC_D_Buy) ? 'B' : 'S';
     
     if (pOrder->CombOffsetFlag[0] == THOST_FTDC_OF_Open) rtn.offset_flag = 'O';
@@ -434,8 +474,9 @@ void CtpRealModule::TraderSpi::OnRtnOrder(CThostFtdcOrderField *pOrder) {
     else rtn.status = 'a'; // Unknown/Other
 
     strncpy(rtn.status_msg, pOrder->StatusMsg, 80);
+    strncpy(rtn.order_sys_id, pOrder->OrderSysID, 20);
 
-    parent_->bus_->publish(EVENT_RTN_ORDER, &rtn);
+    parent_->bus_->publish(EVENT_RTN_RAW_ORDER, &rtn);
 }
 
 void CtpRealModule::TraderSpi::OnRtnTrade(CThostFtdcTradeField *pTrade) {
@@ -449,6 +490,7 @@ void CtpRealModule::TraderSpi::OnRtnTrade(CThostFtdcTradeField *pTrade) {
     strncpy(rtn.symbol, pTrade->InstrumentID, 31);
     rtn.symbol_id = SymbolManager::instance().get_id(rtn.symbol);
     strncpy(rtn.account_id, parent_->user_id_.c_str(), 15);
+    strncpy(rtn.exchange_id, pTrade->ExchangeID, 8); // 透传交易所ID
     rtn.direction = (pTrade->Direction == THOST_FTDC_D_Buy) ? 'B' : 'S';
     
     if (pTrade->OffsetFlag == THOST_FTDC_OF_Open) rtn.offset_flag = 'O';
@@ -459,8 +501,9 @@ void CtpRealModule::TraderSpi::OnRtnTrade(CThostFtdcTradeField *pTrade) {
     rtn.volume = pTrade->Volume;
     strncpy(rtn.trade_id, pTrade->TradeID, 20);
     strncpy(rtn.order_ref, pTrade->OrderRef, 12);
+    strncpy(rtn.order_sys_id, pTrade->OrderSysID, 20);
 
-    parent_->bus_->publish(EVENT_RTN_TRADE, &rtn);
+    parent_->bus_->publish(EVENT_RTN_RAW_TRADE, &rtn);
 }
 
 void CtpRealModule::TraderSpi::OnRspOrderInsert(CThostFtdcInputOrderField *pInputOrder, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast) {
@@ -474,7 +517,7 @@ void CtpRealModule::TraderSpi::OnRspOrderInsert(CThostFtdcInputOrderField *pInpu
             strncpy(rtn.account_id, parent_->user_id_.c_str(), 15);
             rtn.status = '5'; 
             strncpy(rtn.status_msg, pRspInfo->ErrorMsg, 80);
-            parent_->bus_->publish(EVENT_RTN_ORDER, &rtn);
+            parent_->bus_->publish(EVENT_RTN_RAW_ORDER, &rtn);
         }
     }
 }
@@ -488,7 +531,131 @@ void CtpRealModule::TraderSpi::OnErrRtnOrderInsert(CThostFtdcInputOrderField *pI
         strncpy(rtn.symbol, pInputOrder->InstrumentID, 31);
         rtn.status = '5'; // 视为已撤单/失败
         strncpy(rtn.status_msg, pRspInfo->ErrorMsg, 80);
-        parent_->bus_->publish(EVENT_RTN_ORDER, &rtn);
+        parent_->bus_->publish(EVENT_RTN_RAW_ORDER, &rtn);
+    }
+}
+
+void CtpRealModule::parse_reconnect_times(const std::string& times_str) {
+    reconnect_time_ranges_.clear();
+    
+    if (times_str.empty()) return;
+    
+    // 解析时间字符串 "HH:MM:SS" -> HHMMSS (整数)
+    auto parse_time = [](const std::string& time_str) -> int {
+        if (time_str.length() < 8) return -1;
+        try {
+            int h = std::stoi(time_str.substr(0, 2));
+            int m = std::stoi(time_str.substr(3, 2));
+            int s = std::stoi(time_str.substr(6, 2));
+            return h * 10000 + m * 100 + s;
+        } catch (...) {
+            return -1;
+        }
+    };
+    
+    // 按逗号分割多个时间段
+    std::istringstream iss(times_str);
+    std::string range_str;
+    while (std::getline(iss, range_str, ',')) {
+        // 去除前后空格
+        range_str.erase(0, range_str.find_first_not_of(" \t"));
+        range_str.erase(range_str.find_last_not_of(" \t") + 1);
+        
+        // 查找 "-" 分隔符
+        size_t dash_pos = range_str.find('-');
+        if (dash_pos == std::string::npos) continue;
+        
+        std::string start_str = range_str.substr(0, dash_pos);
+        std::string end_str = range_str.substr(dash_pos + 1);
+        
+        // 去除空格
+        start_str.erase(0, start_str.find_first_not_of(" \t"));
+        start_str.erase(start_str.find_last_not_of(" \t") + 1);
+        end_str.erase(0, end_str.find_first_not_of(" \t"));
+        end_str.erase(end_str.find_last_not_of(" \t") + 1);
+        
+        int start_time = parse_time(start_str);
+        int end_time = parse_time(end_str);
+        
+        if (start_time >= 0 && end_time >= 0) {
+            reconnect_time_ranges_.emplace_back(start_time, end_time);
+            if (debug_) {
+                std::cout << "[CTP-Trade] 加载重连时间段: " << start_str 
+                          << " - " << end_str << std::endl;
+            }
+        }
+    }
+    
+    if (debug_ && !reconnect_time_ranges_.empty()) {
+        std::cout << "[CTP-Trade] 共加载 " << reconnect_time_ranges_.size() 
+                  << " 个重连时间段" << std::endl;
+    }
+}
+
+bool CtpRealModule::is_in_reconnect_time() const {
+    // 如果未配置重连时间范围，默认不重连
+    if (reconnect_time_ranges_.empty()) {
+        return false;
+    }
+    
+    // 获取当前时间
+    auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    struct tm* lt = std::localtime(&now);
+    int current_time = lt->tm_hour * 10000 + lt->tm_min * 100 + lt->tm_sec;
+    
+    // 检查是否在任意一个时间段内
+    for (const auto& range : reconnect_time_ranges_) {
+        int start_time = range.first;
+        int end_time = range.second;
+        
+        // 判断是否在时间范围内（支持跨午夜）
+        if (start_time <= end_time) {
+            // 正常时间段（不跨午夜）
+            if (current_time >= start_time && current_time <= end_time) {
+                return true;
+            }
+        } else {
+            // 跨午夜情况（例如 21:00:00 到 02:30:00）
+            if (current_time >= start_time || current_time <= end_time) {
+                return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
+void CtpRealModule::do_connect() {
+    // 1. 安全清理旧连接
+    if (td_api_) {
+        if (debug_) std::cout << "[CTP-Trade] Releasing old API instance..." << std::endl;
+        
+        td_api_->RegisterSpi(nullptr); // 切断回调
+        td_api_->Release();
+        td_api_ = nullptr;
+        
+        // 给 API 内部线程一点退出时间，防止文件锁冲突
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    }
+    
+    if (td_spi_) {
+        delete td_spi_;
+        td_spi_ = nullptr;
+    }
+    
+    // 2. 创建新连接
+    if (!td_front_.empty()) {
+        std::string flow_path = "./flow_log/td_" + user_id_ + "_";
+        
+        td_api_ = CThostFtdcTraderApi::CreateFtdcTraderApi(flow_path.c_str());
+        td_spi_ = new TraderSpi(this);
+        td_api_->RegisterSpi(td_spi_);
+        td_api_->RegisterFront(const_cast<char*>(td_front_.c_str()));
+        td_api_->SubscribePublicTopic(THOST_TERT_QUICK);
+        td_api_->SubscribePrivateTopic(THOST_TERT_QUICK);
+        td_api_->Init();
+        
+        if (debug_) std::cout << "[CTP-Trade] Init called." << std::endl;
     }
 }
 

@@ -24,7 +24,7 @@ struct StrategyNodeHandle {
  */
 class StrategyTreeModule : public IModule {
 public:
-    void init(EventBus* bus, const ConfigMap& config) override {
+    void init(EventBus* bus, const ConfigMap& config, ITimerService* timer_svc = nullptr) override {
         bus_ = bus;
         
         // 是否将信号同步发布到全局总线 (默认开启，供录制器使用)

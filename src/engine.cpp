@@ -50,6 +50,17 @@ private:
     std::array<std::vector<Handler>, MAX_EVENTS> handlers_;
 };
 
+// --- Engine 定时器适配：ITimerService 实现，转发到 Engine::add_timer_impl ---
+class EngineTimerAdapter : public ITimerService {
+public:
+    explicit EngineTimerAdapter(HftEngine* engine) : engine_(engine) {}
+    void add_timer(int interval_sec, std::function<void()> callback, int phase_sec = 0) override {
+        engine_->add_timer_impl(interval_sec, std::move(callback), phase_sec);
+    }
+private:
+    HftEngine* engine_;
+};
+
 // --- Plugin Wrapper ---
 struct PluginHandle {
     void* lib_handle;
@@ -76,6 +87,7 @@ struct PluginHandle {
 
 HftEngine::HftEngine() : is_running_(false) {
     bus_ = std::make_unique<EventBusImpl>();
+    timer_svc_ = std::make_unique<EngineTimerAdapter>(this);
 }
 
 HftEngine::~HftEngine() {
@@ -169,10 +181,10 @@ bool HftEngine::loadConfig(const std::string& config_path) {
                 }
             }
 
-            // D. 实例化并初始化
+            // D. 实例化并初始化（传入 timer_svc 供模块注册定时任务）
             IModule* raw_ptr = create_fn();
             if (raw_ptr) {
-                raw_ptr->init(bus_.get(), config_map);
+                raw_ptr->init(bus_.get(), config_map, timer_svc_.get());
 
                 auto plugin = std::make_shared<PluginHandle>();
                 plugin->lib_handle = handle;
@@ -210,7 +222,17 @@ void HftEngine::run() {
     
     std::cout << ">>> System Running. Waiting for signal or end time..." << std::endl;
 
+    auto last_tick = std::chrono::steady_clock::now();
+
     while (!g_shutdown) {
+        auto now_clock = std::chrono::steady_clock::now();
+        if (now_clock - last_tick >= std::chrono::seconds(1)) {
+            total_seconds_++;
+            last_tick += std::chrono::seconds(1);
+            run_due_timers();
+        }
+
+        // --- 结束时间检查 ---
         if (!end_time_.empty()) {
              auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
              std::tm local_tm = *std::localtime(&now);
@@ -224,10 +246,31 @@ void HftEngine::run() {
              }
         }
         
-        std::this_thread::sleep_for(std::chrono::seconds(10));
+        // 降低轮询频率，减少 CPU 占用，但保证秒级精度
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     stop();
+}
+
+void HftEngine::add_timer_impl(int interval_sec, std::function<void()> cb, int phase_sec) {
+    if (interval_sec <= 0) return;
+    int phase = (phase_sec % interval_sec + interval_sec) % interval_sec;
+    // 首次触发在「下一次 run_due_timers」之后、且 total_seconds % interval == phase 的最早时刻
+    uint64_t first_run = total_seconds_ + 1;
+    uint64_t base = (first_run / static_cast<uint64_t>(interval_sec)) * static_cast<uint64_t>(interval_sec);
+    uint64_t next_fire = base + static_cast<uint64_t>(phase);
+    if (next_fire < first_run) next_fire += static_cast<uint64_t>(interval_sec);
+    timer_tasks_.push_back({ interval_sec, next_fire, std::move(cb) });
+}
+
+void HftEngine::run_due_timers() {
+    for (auto& t : timer_tasks_) {
+        if (total_seconds_ >= t.next_fire) {
+            t.callback();
+            t.next_fire += static_cast<uint64_t>(t.interval_sec);
+        }
+    }
 }
 
 void HftEngine::stop() {

@@ -58,14 +58,18 @@ std::unordered_map<std::string, AccountDetail> acc_cache_;
       "account_id": "80001",
       "symbol": "rb2405",
       "long_td": 2,
+      "long_pnl": 100.0,
       "short_td": 0,
-      "net_pnl": 150.0
+      "short_pnl": 0.0,
+      "net_pnl": 100.0
     },
     {
       "account_id": "Sim999",
       "symbol": "hc2405",
       "long_td": 0,
+      "long_pnl": 0.0,
       "short_td": 5,
+      "short_pnl": -50.0,
       "net_pnl": -50.0
     }
   ]

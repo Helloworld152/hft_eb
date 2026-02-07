@@ -6,7 +6,7 @@
 
 class CtpModule : public IModule {
 public:
-    void init(EventBus* bus, const ConfigMap& config) override {
+    void init(EventBus* bus, const ConfigMap& config, ITimerService* timer_svc = nullptr) override {
         bus_ = bus;
         symbol_ = config.at("symbol");
         std::cout << "[CTP] Initialized for " << symbol_ << std::endl;

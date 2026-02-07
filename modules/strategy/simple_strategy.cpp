@@ -5,7 +5,7 @@
 
 class StrategyModule : public IModule {
 public:
-    void init(EventBus* bus, const ConfigMap& config) override {
+    void init(EventBus* bus, const ConfigMap& config, ITimerService* timer_svc = nullptr) override {
         bus_ = bus;
         
         // Load global symbols (strategy assumes manager is already loaded by engine, but for safety...)

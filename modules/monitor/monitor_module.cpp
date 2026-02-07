@@ -53,7 +53,7 @@ struct MonitorEvent {
 
 class MonitorModule : public IModule {
 public:
-    void init(EventBus* bus, const ConfigMap& config) override {
+    void init(EventBus* bus, const ConfigMap& config, ITimerService* timer_svc = nullptr) override {
         bus_ = bus;
 
         if (config.count("pub_addr")) pub_addr_ = config.at("pub_addr");
@@ -66,8 +66,11 @@ public:
             std::string val = config.at("debug");
             debug_ = (val == "true" || val == "1");
         }
+        if (config.count("query_interval")) query_interval_ = std::stoi(config.at("query_interval"));
+        timer_svc_ = timer_svc;
 
-        std::cout << "[Monitor] 初始化. ZMQ 地址: " << pub_addr_ << ", WS 端口: " << ws_port << std::endl;
+        std::cout << "[Monitor] 初始化. ZMQ 地址: " << pub_addr_ << ", WS 端口: " << ws_port
+                  << ", 查询间隔: " << query_interval_ << "s" << std::endl;
 
         ws_server_ = std::make_unique<ix::WebSocketServer>(ws_port, "0.0.0.0");
         ws_server_->setOnConnectionCallback(
@@ -157,10 +160,11 @@ public:
 
     void start() override {
         running_ = true;
-        
-        // Start ZMQ/Broadcasting Thread
+
+        // 持仓/资金由 Position 模块定时向 CTP 查询并推送，Monitor 只消费 EVENT_POS_UPDATE / EVENT_ACC_UPDATE
+
         worker_ = std::thread(&MonitorModule::io_loop, this);
-        
+
         // Start WS Server (Non-blocking)
         auto res = ws_server_->listen();
         if (!res.first) {
@@ -223,11 +227,13 @@ private:
                 j["long_yd"] = pos.long_yd;
                 j["long_total"] = pos.long_td + pos.long_yd;
                 j["long_price"] = pos.long_avg_price;
+                j["long_pnl"] = pos.long_pnl;
                 
                 j["short_td"] = pos.short_td;
                 j["short_yd"] = pos.short_yd;
                 j["short_total"] = pos.short_td + pos.short_yd;
                 j["short_price"] = pos.short_avg_price;
+                j["short_pnl"] = pos.short_pnl;
                 
                 j["pnl"] = pos.net_pnl;
                 root["data"].push_back(j);
@@ -245,6 +251,7 @@ private:
 
             if (action == "order") {
                 OrderReq req;
+                std::memset(&req, 0, sizeof(req)); // 清零确保安全
                 std::string acc_id = j.value("account_id", "");
                 strncpy(req.account_id, acc_id.c_str(), 15);
 
@@ -262,44 +269,39 @@ private:
                 req.volume = j.value("volume", 1);
 
                 if (debug_) {
-                    std::cout << "[Monitor] 远程下单: Acc=" << req.account_id << " " 
+                    std::cout << "[Monitor] WS 报单请求: Acc=" << req.account_id << " " 
                               << req.symbol << " " << req.direction << " @ " << req.price << std::endl;
                 }
 
-                bus_->publish(EVENT_ORDER_SEND, &req);
+                // 发给 OrderManager 进行 ID 生成和分发
+                bus_->publish(EVENT_ORDER_REQ, &req);
             } else if (action == "cancel") {
                 CancelReq req;
                 std::memset(&req, 0, sizeof(req));
+                
+                // 优先使用 client_id 撤单 (新架构推荐)
+                if (j.count("client_id")) {
+                    req.client_id = j.at("client_id").get<uint64_t>();
+                }
+                
                 std::string acc_id = j.value("account_id", "");
                 strncpy(req.account_id, acc_id.c_str(), 15);
 
                 std::string symbol = j.value("symbol", "");
-                std::string order_ref = j.value("order_ref", "");
-                
                 strncpy(req.symbol, symbol.c_str(), 31);
+                
+                // 兼容旧的 order_ref 撤单方式
+                std::string order_ref = j.value("order_ref", "");
                 strncpy(req.order_ref, order_ref.c_str(), 12);
                 
                 if (debug_) {
-                    std::cout << "[Monitor] 远程撤单: Acc=" << req.account_id << " "
-                              << req.symbol << " Ref=" << req.order_ref << std::endl;
+                    std::cout << "[Monitor] WS 撤单请求: CID=" << req.client_id 
+                              << " Acc=" << req.account_id << " Ref=" << req.order_ref << std::endl;
                 }
                 bus_->publish(EVENT_CANCEL_REQ, &req);
             }
         } catch (const std::exception& e) {
             std::cerr << "[Monitor] JSON 解析错误: " << e.what() << std::endl;
-        }
-    }
-
-    void queryLoop() {
-        while (running_) {
-            std::this_thread::sleep_for(std::chrono::seconds(query_interval_));
-            bus_->publish(EVENT_QRY_POS, nullptr);
-            
-            // CTP 限制查询频率通常为 1次/秒，这里间隔 1.1s 确保安全
-            std::this_thread::sleep_for(std::chrono::milliseconds(1100)); 
-            
-            bus_->publish(EVENT_QRY_ACC, nullptr);
-            if (debug_) std::cout << "[Monitor] 发起持仓和资金查询..." << std::endl;
         }
     }
 
@@ -328,8 +330,10 @@ private:
                 } 
                 else if (evt.type == EVENT_RTN_ORDER) {
                     j["type"] = "rtn";
+                    j["client_id"] = evt.data.rtn.client_id;
                     j["account_id"] = evt.data.rtn.account_id;
                     j["order_ref"] = evt.data.rtn.order_ref;
+                    j["order_sys_id"] = evt.data.rtn.order_sys_id;
                     j["symbol"] = evt.data.rtn.symbol;
                     j["direction"] = std::string(1, evt.data.rtn.direction);
                     j["offset"] = std::string(1, evt.data.rtn.offset_flag);
@@ -342,8 +346,10 @@ private:
                 }
                 else if (evt.type == EVENT_RTN_TRADE) {
                     j["type"] = "trade";
+                    j["client_id"] = evt.data.trade.client_id;
                     j["account_id"] = evt.data.trade.account_id;
                     j["order_ref"] = evt.data.trade.order_ref;
+                    j["order_sys_id"] = evt.data.trade.order_sys_id;
                     j["trade_id"] = evt.data.trade.trade_id;
                     j["symbol"] = evt.data.trade.symbol;
                     j["direction"] = std::string(1, evt.data.trade.direction);
@@ -426,10 +432,11 @@ private:
         zmq_ctx_destroy(context);
     }
 
-    EventBus* bus_;
+    EventBus* bus_ = nullptr;
+    ITimerService* timer_svc_ = nullptr;
     std::string pub_addr_;
-    bool debug_ = false; // 调试标志
-    int query_interval_ = 5; // 默认 5秒
+    bool debug_ = false;
+    int query_interval_ = 5;
     std::unique_ptr<ix::WebSocketServer> ws_server_;
     
     // Position Cache for initial snapshots
@@ -443,7 +450,6 @@ private:
     // Internal queue for decoupling bus and network IO
     RingBuffer<MonitorEvent, 4096> queue_;
     std::thread worker_;
-    std::thread query_worker_;
     std::atomic<bool> running_{false};
 };
 

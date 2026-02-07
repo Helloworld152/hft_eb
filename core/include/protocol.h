@@ -66,6 +66,8 @@ struct AccountDetail {
 };
 
 struct OrderReq {
+    uint64_t client_id;  // 内部唯一订单ID
+    char order_ref[13];  // 映射ID (由 OrderManager 生成)
     char account_id[16];
     char symbol[32];
     uint64_t symbol_id;
@@ -76,15 +78,20 @@ struct OrderReq {
 };
 
 struct CancelReq {
+    uint64_t client_id;  // 指向原报单的内部唯一ID
     char account_id[16];
     char symbol[32];
     char order_ref[13];
+    char order_sys_id[21]; // 交易所系统 ID
 };
 
 // 报单回报
 struct OrderRtn {
+    uint64_t client_id;  // 对应请求的内部ID
     char account_id[16];
     char order_ref[13];
+    char order_sys_id[21]; // 交易所系统 ID
+    char exchange_id[9];   // 交易所代码
     char symbol[32];
     uint64_t symbol_id;
     char direction;      // 'B'/'S'
@@ -98,7 +105,9 @@ struct OrderRtn {
 
 // 成交回报
 struct TradeRtn {
+    uint64_t client_id;  // 对应请求的内部ID
     char account_id[16];
+    char exchange_id[9];   // 交易所代码
     char symbol[32];
     uint64_t symbol_id;
     char direction;      // 'B'/'S'
@@ -107,23 +116,29 @@ struct TradeRtn {
     int volume;
     char trade_id[21];
     char order_ref[13];
+    char order_sys_id[21]; // 交易所系统 ID
 };
 
 // 持仓明细
 struct PositionDetail {
     char account_id[16];
     char symbol[32];
+    char exchange_id[9]; // 交易所代码
     uint64_t symbol_id;
+    char direction;      // '1':Net, '2':Long, '3':Short
+    char position_date;  // '1':Today, '2':History, '3':Both/Total
     
     // 多头
     int long_td;
     int long_yd;
     double long_avg_price;
+    double long_pnl;
     
-    // 假头
+    // 空头
     int short_td;
     int short_yd;
     double short_avg_price;
+    double short_pnl;
     
     double net_pnl;
 };

@@ -143,6 +143,11 @@ add_library(mod_position SHARED modules/position/position_module.cpp)
 target_include_directories(mod_position PRIVATE include)
 target_link_libraries(mod_position PRIVATE hft_core nlohmann_json::nlohmann_json)
 
+# 5.1 编译插件 E-Order: Order Manager
+add_library(mod_order SHARED modules/order/order_manager_module.cpp)
+target_include_directories(mod_order PRIVATE include core/include)
+target_link_libraries(mod_order PRIVATE hft_core)
+
 # 6. 编译插件 F: Monitor (WebSocket + ZMQ)
 add_library(mod_monitor SHARED modules/monitor/monitor_module.cpp)
 target_include_directories(mod_monitor PRIVATE include)

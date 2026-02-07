@@ -40,7 +40,7 @@ class IModule {
 public:
     virtual ~IModule() = default;
     // 核心接口：模块在这里读取配置，并把自己 "插" 到总线上
-    virtual void init(EventBus* bus, const ConfigMap& config) = 0;
+    virtual void init(EventBus* bus, const ConfigMap& config, void* timer_svc = nullptr) = 0;
 };
 
 // 1.4 模块工厂 (单例)
@@ -85,7 +85,7 @@ struct SignalEvent { std::string action; double price; };
 // 逻辑：基于配置的阈值，价格高了就卖
 class SimpleStrategy : public IModule {
 public:
-    void init(EventBus* bus, const ConfigMap& config) override {
+    void init(EventBus* bus, const ConfigMap& config, void* timer_svc = nullptr) override {
         bus_ = bus;
         // 1. 从配置中读取参数
         threshold_ = std::stod(config.at("threshold"));
@@ -118,7 +118,7 @@ REGISTER_MODULE(SimpleStrategy) // <--- 自动注册！
 // 逻辑：模拟产生数据
 class MockFeed : public IModule {
 public:
-    void init(EventBus* bus, const ConfigMap& config) override {
+    void init(EventBus* bus, const ConfigMap& config, void* timer_svc = nullptr) override {
         symbol_ = config.at("symbol");
         bus_ = bus;
         std::cout << "[DataFeed] Listening for " << symbol_ << std::endl;
@@ -141,7 +141,7 @@ REGISTER_MODULE(MockFeed) // <--- 自动注册！
 // 逻辑：只记录下单信号
 class AuditLogger : public IModule {
 public:
-    void init(EventBus* bus, const ConfigMap& config) override {
+    void init(EventBus* bus, const ConfigMap& config, void* timer_svc = nullptr) override {
         std::string file = config.at("file_path");
         std::cout << "[Logger] Writing logs to " << file << std::endl;
 

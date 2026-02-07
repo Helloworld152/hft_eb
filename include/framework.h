@@ -17,15 +17,18 @@ enum EventType {
     EVENT_MARKET_DATA = 0, // 行情
     EVENT_ORDER_REQ,       // 报单请求 (策略意图)
     EVENT_ORDER_SEND,      // 报单指令 (经风控批准)
-    EVENT_RTN_ORDER,       // 报单回报 (交易所状态)
-    EVENT_RTN_TRADE,       // 成交回报 (交易所成交)
+    EVENT_RTN_ORDER,       // 处理后的报单回报 (OrderManager -> Strategy/Position)
+    EVENT_RTN_TRADE,       // 处理后的成交回报 (OrderManager -> Strategy/Position)
+    EVENT_RTN_RAW_ORDER,   // 原始报单回报 (TradeModule -> OrderManager)
+    EVENT_RTN_RAW_TRADE,   // 原始成交回报 (TradeModule -> OrderManager)
     EVENT_POS_UPDATE,      // 持仓更新 (PositionModule -> Others)
     EVENT_RSP_POS,         // 持仓查询回报 (CtpReal -> PositionModule)
     EVENT_KLINE,           // K线数据
     EVENT_SIGNAL,          // 因子信号 (Factor Signal)
     EVENT_QRY_POS,         // 主动查询持仓请求
     EVENT_QRY_ACC,         // 主动查询资金请求
-    EVENT_CANCEL_REQ,      // 撤单请求
+    EVENT_CANCEL_REQ,      // 撤单请求 (策略发出)
+    EVENT_CANCEL_SEND,     // 撤单指令 (OrderManager 发出)
     EVENT_ACC_UPDATE,      // 资金更新回报
     EVENT_CONN_STATUS,     // 连接状态更新
     EVENT_LOG,             // 日志
@@ -49,7 +52,17 @@ public:
 };
 
 // ==========================================
-// 3. 插件接口 (Plugin 实现)
+// 3. 定时器服务 (由 Engine 实现并传入需定时的模块)
+// ==========================================
+class ITimerService {
+public:
+    virtual ~ITimerService() = default;
+    // 每 interval_sec 秒执行一次 callback；phase_sec 为相位(0~interval_sec-1)，首次触发在 total_seconds % interval_sec == phase_sec 的时刻
+    virtual void add_timer(int interval_sec, std::function<void()> callback, int phase_sec = 0) = 0;
+};
+
+// ==========================================
+// 4. 插件接口 (Plugin 实现)
 // ==========================================
 using ConfigMap = std::unordered_map<std::string, std::string>;
 
@@ -57,16 +70,15 @@ class IModule {
 public:
     virtual ~IModule() = default;
     
-    // 初始化：Host 会把 bus 指针传进来
-    virtual void init(EventBus* bus, const ConfigMap& config) = 0;
+    // 初始化：bus、config 必填；timer_svc 非空时可向 Engine 注册定时任务
+    virtual void init(EventBus* bus, const ConfigMap& config, ITimerService* timer_svc = nullptr) = 0;
     
-    // 可选：启动/停止
     virtual void start() {}
     virtual void stop() {}
 };
 
 // ==========================================
-// 4. 二级策略插件接口 (Strategy Tree Leaf)
+// 5. 二级策略插件接口 (Strategy Tree Leaf)
 // ==========================================
 struct StrategyContext {
     std::string strategy_id;
@@ -86,7 +98,7 @@ public:
 };
 
 // ==========================================
-// 5. 匾出符号约定
+// 6. 匾出符号约定
 // ==========================================
 // 每个 .so 必须实现这个函数来创建模块实例
 typedef IModule* (*CreateModuleFunc)();

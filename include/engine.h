@@ -3,13 +3,23 @@
 #include <vector>
 #include <memory>
 #include <string>
+#include <functional>
+#include <cstdint>
 #include "framework.h"
 
-// 前向声明，隐藏实现细节
 class EventBusImpl;
 struct PluginHandle;
+class EngineTimerAdapter;
+
+// Engine 内部定时任务项（由 run 循环统一驱动）
+struct TimerTask {
+    int interval_sec;
+    uint64_t next_fire;
+    std::function<void()> callback;
+};
 
 class HftEngine {
+    friend class EngineTimerAdapter;
 public:
     HftEngine();
     ~HftEngine();
@@ -32,12 +42,17 @@ public:
     void stop();
 
 private:
-    // PImpl idiom to hide implementation details
     std::unique_ptr<EventBusImpl> bus_;
     std::vector<std::shared_ptr<PluginHandle>> plugins_;
     bool is_running_;
-
-    // 自动启停时间 (格式 "HH:MM:SS")
     std::string start_time_;
     std::string end_time_;
+
+    // 统一定时器：任务列表 + 运行秒数，由 run() 每秒驱动
+    std::vector<TimerTask> timer_tasks_;
+    uint64_t total_seconds_ = 0;
+    std::unique_ptr<ITimerService> timer_svc_;
+
+    void add_timer_impl(int interval_sec, std::function<void()> cb, int phase_sec = 0);
+    void run_due_timers();
 };

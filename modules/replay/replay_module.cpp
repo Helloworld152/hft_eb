@@ -10,7 +10,7 @@
 
 class ReplayModule : public IModule {
 public:
-    void init(EventBus* bus, const ConfigMap& config) override {
+    void init(EventBus* bus, const ConfigMap& config, ITimerService* timer_svc = nullptr) override {
         bus_ = bus;
         
         if (config.find("data_file") != config.end()) {

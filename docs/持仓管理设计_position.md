@@ -49,15 +49,17 @@ struct PositionDetail {
     // 多头 (Long)
     int long_td;      // 今仓
     int long_yd;      // 昨仓 (可平量)
-    double long_avg_price; // 持仓均价 (暂未实现复杂计算)
+    double long_avg_price; // 持仓均价
+    double long_pnl;       // 多头浮动盈亏
     
     // 空头 (Short)
     int short_td;
     int short_yd;
     double short_avg_price;
+    double short_pnl;      // 空头浮动盈亏
     
     // 聚合数据
-    double net_pnl;   // 浮动盈亏 (需要最新行情计算)
+    double net_pnl;   // 总浮动盈亏 (long_pnl + short_pnl)
 };
 ```
 
