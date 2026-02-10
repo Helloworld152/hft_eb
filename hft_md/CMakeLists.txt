@@ -19,6 +19,9 @@ link_directories(../third_party/ctp/lib)
 # Source files
 set(SOURCES src/main.cpp)
 
+# Add symbol_manager source (needed by Recorder)
+set(SOURCES ${SOURCES} ../core/src/symbol_manager.cpp)
+
 # Executable
 add_executable(hft_recorder ${SOURCES})
 

@@ -24,7 +24,19 @@ public:
             debug_ = (config.at("debug") == "true" || config.at("debug") == "1");
         }
 
-        std::cout << "[Replay] 模块初始化完成。Mmap 基础路径: " << file_path_ << std::endl;
+        // 读取最大容量配置（用于实时读取场景，0 表示使用 meta 文件中的 capacity）
+        if (config.find("max_capacity") != config.end()) {
+            max_capacity_ = std::stoull(config.at("max_capacity"));
+        } else {
+            max_capacity_ = 0;  // 默认使用 meta 文件中的 capacity
+        }
+
+        std::cout << "[Replay] 模块初始化完成。Mmap 基础路径: " << file_path_;
+        if (max_capacity_ > 0) {
+            std::cout << ", Max Capacity: " << max_capacity_ << " records (~" 
+                      << (max_capacity_ * sizeof(TickRecord) / (1024.0 * 1024.0 * 1024.0)) << " GB)";
+        }
+        std::cout << std::endl;
     }
 
     void start() override {
@@ -43,7 +55,7 @@ private:
         while (running_) {
             try {
                 // 尝试连接到 Mmap 通道
-                MmapReader<TickRecord> reader(file_path_);
+                MmapReader<TickRecord> reader(file_path_, max_capacity_);
                 std::cout << "[Replay] 已连接到 Mmap 管道，开始回放..." << std::endl;
 
                 auto start_t = std::chrono::high_resolution_clock::now();
@@ -77,10 +89,10 @@ private:
                         }
 
                         // 无锁轮询，极低延迟
-                        _mm_pause(); 
+                        // _mm_pause(); 
                         
                         // 可选：如果 CPU 负载过高，可取消下面的注释
-                        // std::this_thread::sleep_for(std::chrono::microseconds(1));
+                        std::this_thread::sleep_for(std::chrono::microseconds(1));
                     }
                 }
                 return;
@@ -113,6 +125,7 @@ private:
     std::atomic<bool> running_{false};
     bool debug_ = false;
     uint64_t tick_count_ = 0; // 计数器
+    uint64_t max_capacity_ = 0; // 最大容量（0 表示使用 meta 文件中的 capacity）
 };
 
 EXPORT_MODULE(ReplayModule)

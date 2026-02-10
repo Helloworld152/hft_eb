@@ -37,16 +37,24 @@ public:
         bus_->subscribe(EVENT_RSP_POS, [this](void* d) {
             this->onRspPos(static_cast<PositionDetail*>(d));
         });
+        bus_->subscribe(EVENT_CACHE_RESET, [this](void* d) {
+            this->onCacheReset(static_cast<CacheReset*>(d));
+        });
     }
 
     void start() override {
         if (timer_svc_) {
+            // 持仓查询定时器（相位 0）
             timer_svc_->add_timer(query_interval_, [this]() {
                 bus_->publish(EVENT_QRY_POS, nullptr);
+                if (debug_) std::cout << "[Position] [Timer] 发起持仓查询..." << std::endl;
+            }, 0);
+            // 资金查询定时器（相同间隔，相位偏移一半）
+            timer_svc_->add_timer(query_interval_, [this]() {
                 bus_->publish(EVENT_QRY_ACC, nullptr);
-                if (debug_) std::cout << "[Position] [Timer] 发起持仓和资金查询..." << std::endl;
-            });
-            timer_svc_->add_timer(5, [this]() { dumpToJson(); });
+                if (debug_) std::cout << "[Position] [Timer] 发起资金查询..." << std::endl;
+            }, 2);
+            timer_svc_->add_timer(10, [this]() { dumpToJson(); });
         }
     }
 
@@ -140,6 +148,24 @@ private:
         local.net_pnl = local.long_pnl + local.short_pnl;
         
         bus_->publish(EVENT_POS_UPDATE, &local);
+    }
+
+    void onCacheReset(CacheReset* cr) {
+        std::lock_guard<std::mutex> lock(mtx_);
+        std::string acc_id = cr->account_id;
+        
+        if (cr->reset_type & 0x1) { // Position bit
+            if (acc_id.empty() || acc_id[0] == '\0') {
+                std::cout << "[Position] [Reset] Clearing ALL account positions. TradingDay: " 
+                          << cr->trading_day << " Reason: " << cr->reason << std::endl;
+                positions_.clear();
+            } else {
+                std::cout << "[Position] [Reset] Clearing account [" << acc_id 
+                          << "] positions. TradingDay: " << cr->trading_day 
+                          << " Reason: " << cr->reason << std::endl;
+                positions_.erase(acc_id);
+            }
+        }
     }
 
     void onTrade(TradeRtn* rtn) {

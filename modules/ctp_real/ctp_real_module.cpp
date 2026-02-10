@@ -93,6 +93,7 @@ private:
     TraderSpi* td_spi_ = nullptr;
     
     std::atomic<bool> logged_in_{false};
+    uint32_t ctp_trading_day_ = 0;
     bool debug_ = false;
 };
 
@@ -356,6 +357,10 @@ void CtpRealModule::TraderSpi::OnRspUserLogin(CThostFtdcRspUserLoginField *pRspU
     this->front_id_ = pRspUserLogin->FrontID;
     this->session_id_ = pRspUserLogin->SessionID;
 
+    if (pRspUserLogin->TradingDay && strlen(pRspUserLogin->TradingDay) > 0) {
+        parent_->ctp_trading_day_ = std::atoi(pRspUserLogin->TradingDay);
+    }
+
     std::string msg = "MaxOrderRef:" + std::string(pRspUserLogin->MaxOrderRef);
     std::cout << "[CTP-Trade] Login Success. TradingDay: " << pRspUserLogin->TradingDay 
               << ", FrontID=" << front_id_ << ", SessionID=" << session_id_
@@ -375,6 +380,14 @@ void CtpRealModule::TraderSpi::OnRspSettlementInfoConfirm(CThostFtdcSettlementIn
     }
     std::cout << "[CTP-Trade] Settlement Confirmed. Ready for commands." << std::endl;
     parent_->logged_in_ = true;
+
+    // 触发重置信号
+    CacheReset cr = {0};
+    strncpy(cr.account_id, parent_->user_id_.c_str(), 15);
+    cr.trading_day = parent_->ctp_trading_day_;
+    cr.reset_type = 0xFFFFFFFF; // 重置所有
+    strncpy(cr.reason, "CTP_SETTLEMENT_CONFIRMED", 63);
+    parent_->bus_->publish(EVENT_CACHE_RESET, &cr);
 }
 
 void CtpRealModule::TraderSpi::OnRspQryInvestorPosition(CThostFtdcInvestorPositionField *pInvestorPosition, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast) {

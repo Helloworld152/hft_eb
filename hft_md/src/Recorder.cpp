@@ -189,6 +189,13 @@ private:
                 symbols_.push_back(s.as<std::string>());
             }
         }
+
+        // 初始容量配置（默认 5000 万条）
+        if (doc["initial_capacity"]) {
+            initial_capacity_ = doc["initial_capacity"].as<uint64_t>();
+        } else {
+            initial_capacity_ = 50000000;  // 默认 5000 万条
+        }
     }
 
     uint32_t parse_time(const std::string& time_str) {
@@ -227,9 +234,10 @@ private:
             std::string base_path = output_path_ + "/market_data_" + date_str + file_suffix_;
             
             std::cout << "[Recorder] Output File: " << base_path << std::endl;
+            std::cout << "[Recorder] Initial Capacity: " << initial_capacity_ << " records (~" 
+                      << (initial_capacity_ * sizeof(TickRecord) / (1024.0 * 1024.0 * 1024.0)) << " GB)" << std::endl;
             
-            // Pre-allocate 5M records (~1GB)
-            global_ctx_->writer = std::make_unique<MmapWriter<TickRecord>>(base_path, 5000000);
+            global_ctx_->writer = std::make_unique<MmapWriter<TickRecord>>(base_path, initial_capacity_);
         }
 
         if (global_ctx_->writer) {
@@ -249,6 +257,7 @@ private:
     std::string file_suffix_; // 新增：文件名后缀
     uint32_t start_time_ = 0;
     uint32_t end_time_ = 0;
+    uint64_t initial_capacity_ = 50000000;  // 初始容量（默认 5000 万条）
 
     CThostFtdcMdApi* md_api_ = nullptr;
     RingBuffer<TickRecord, 65536> rb_;
