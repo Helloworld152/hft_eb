@@ -158,3 +158,10 @@ struct ConnectionStatus {
     char status;     // '0': Disconnected, '1': Connected, '2': Authenticated, '3': LoggedIn
     char msg[64];
 };
+
+struct CacheReset {
+    char account_id[16];
+    uint32_t trading_day; // YYYYMMDD
+    uint32_t reset_type;  // 0x1: Position, 0x2: Orders, 0xFF: All
+    char reason[64];
+};

@@ -81,6 +81,7 @@ include_directories(core/include)
 # 0. 核心基础设施库 (共享单例)
 # ==========================================
 add_library(hft_core SHARED core/src/symbol_manager.cpp core/src/market_snapshot.cpp)
+target_link_libraries(hft_core PRIVATE rt) # 显式链接实时库以支持 shm_open
 
 # 1. 编译插件 A: CTP (模拟)
 add_library(mod_ctp SHARED modules/ctp/ctp_module.cpp)

@@ -1,5 +1,6 @@
 #include "../include/engine.h"
 #include "../core/include/symbol_manager.h"
+#include "../core/include/market_snapshot.h"
 #include <dlfcn.h>
 #include <iostream>
 #include <thread>
@@ -119,6 +120,34 @@ bool HftEngine::loadConfig(const std::string& config_path) {
         std::cerr << "FATAL: YAML Parse Error: " << e.what() << std::endl;
         return false;
     }
+
+    // [INTEGRATION] 初始化截面 (Local 或 Shm)
+    if (config["snapshot"]) {
+        const auto& snap = config["snapshot"];
+        std::string type = snap["type"] ? snap["type"].as<std::string>() : "local";
+        bool is_writer = snap["is_writer"] ? snap["is_writer"].as<bool>() : true;
+
+        if (type == "shm") {
+            std::string path = snap["path"] ? snap["path"].as<std::string>() : "/hft_snapshot";
+            std::cout << "[System] Initializing SHM MarketSnapshot: " << path << (is_writer ? " (Writer)" : " (Reader)") << std::endl;
+            try {
+                snapshot_impl_ = std::make_unique<ShmMarketSnapshot>(path, is_writer);
+            } catch (const std::exception& e) {
+                std::cerr << "[System] Failed to init SHM: " << e.what() << ". Falling back to local." << std::endl;
+                snapshot_impl_ = std::make_unique<LocalMarketSnapshot>();
+            }
+        } else {
+            std::cout << "[System] Initializing Local MarketSnapshot." << std::endl;
+            snapshot_impl_ = std::make_unique<LocalMarketSnapshot>();
+        }
+    } else {
+        // 默认兜底
+        std::cout << "[System] No snapshot config found, using Local MarketSnapshot." << std::endl;
+        snapshot_impl_ = std::make_unique<LocalMarketSnapshot>();
+    }
+    
+    // 设置全局单例指针
+    MarketSnapshot::set_instance(snapshot_impl_.get());
 
     if (config["trading_hours"]) {
         const auto& th = config["trading_hours"];

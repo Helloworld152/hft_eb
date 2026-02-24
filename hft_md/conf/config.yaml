@@ -1,4 +1,4 @@
-md_front: tcp://182.254.243.31:40011
+md_front: tcp://182.254.243.31:30011
 broker_id: '9999'
 user_id: ''
 password: ''
@@ -260,7 +260,6 @@ symbols:
 - WH609
 - WH611
 - WH701
-- ZC602
 - ZC603
 - ZC604
 - ZC605
@@ -272,6 +271,7 @@ symbols:
 - ZC611
 - ZC612
 - ZC701
+- ZC702
 - a2603
 - a2605
 - a2607
@@ -866,6 +866,8 @@ symbols:
 - zn2612
 - zn2701
 output_path: ../data/
-trading_day: '20260131'
+trading_day: '20260224'
 start_time: 08:50:00
-end_time: 02:40:00
+end_time: 15:40:00
+initial_capacity: 50000000  # 初始容量（条数），默认 5000 万条，约 15GB
+shm: /hft_md_snapshot

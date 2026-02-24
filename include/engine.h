@@ -10,6 +10,7 @@
 class EventBusImpl;
 struct PluginHandle;
 class EngineTimerAdapter;
+class MarketSnapshot; // 前置声明
 
 // Engine 内部定时任务项（由 run 循环统一驱动）
 struct TimerTask {
@@ -55,4 +56,6 @@ private:
 
     void add_timer_impl(int interval_sec, std::function<void()> cb, int phase_sec = 0);
     void run_due_timers();
+
+    std::unique_ptr<MarketSnapshot> snapshot_impl_;
 };

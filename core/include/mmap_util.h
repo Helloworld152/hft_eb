@@ -81,8 +81,9 @@ public:
             // 裁剪文件到实际大小，释放磁盘空间
             std::string dat_path = base_path_ + ".dat";
             if (truncate(dat_path.c_str(), actual_size) != 0) {
-                // 析构函数中不抛出异常，仅打印错误
                 perror("MmapWriter truncate failed");
+            } else {
+                std::cout << "[MmapWriter] File truncated to " << final_cursor << " records" << std::endl;
             }
         }
     }
@@ -115,7 +116,10 @@ private:
 template <typename T>
 class MmapReader {
 public:
-    MmapReader(const std::string& base_path) {
+    // base_path: 数据文件基础路径
+    // max_capacity: 最大容量（条数），0 表示使用 meta 文件中的 capacity（用于录制完成后读取）
+    //               非 0 表示使用固定大小映射（用于实时读取场景）
+    MmapReader(const std::string& base_path, uint64_t max_capacity = 0) {
         std::string dat_path = base_path + ".dat";
         std::string meta_path = base_path + ".meta";
 
@@ -137,7 +141,13 @@ public:
             throw std::runtime_error("无法打开数据文件: " + dat_path);
         }
         
-        capacity_ = meta_ptr_->capacity;
+        // 如果指定了 max_capacity，使用配置值；否则使用 meta 文件中的 capacity
+        if (max_capacity > 0) {
+            capacity_ = max_capacity;
+        } else {
+            capacity_ = meta_ptr_->capacity;
+        }
+        
         uint64_t dat_size = capacity_ * sizeof(T);
         data_ptr_ = (T*)mmap(nullptr, dat_size, PROT_READ, MAP_SHARED, fd_dat, 0);
         if (data_ptr_ == MAP_FAILED) {

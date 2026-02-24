@@ -1,6 +1,7 @@
 #include "protocol.h"
 #include "ring_buffer.h"
 #include "symbol_manager.h"
+#include "market_snapshot.h"
 #include "ThostFtdcMdApi.h"
 #include "mmap_util.h"
 #include <thread>
@@ -30,6 +31,17 @@ public:
 
         // Load symbols
         SymbolManager::instance().load("../conf/symbols.txt");
+
+        // [INTEGRATION] 初始化截面共享内存 (作为写者)
+        if (use_shm_) {
+            try {
+                shm_impl_ = std::make_unique<ShmMarketSnapshot>(shm_path_, true);
+                MarketSnapshot::set_instance(shm_impl_.get());
+                std::cout << "[Recorder] SHM Snapshot initialized at: " << shm_path_ << std::endl;
+            } catch (const std::exception& e) {
+                std::cerr << "[Recorder] Failed to init SHM: " << e.what() << std::endl;
+            }
+        }
 
         // 1. 启动异步写入线程
         writer_thread_ = std::thread(&TickRecorder::writer_loop, this);
@@ -150,6 +162,10 @@ public:
             rec.update_time = (static_cast<uint64_t>(hh) * 10000 + mm * 100 + ss) * 1000 + pData->UpdateMillisec;
         }
 
+        // [INTEGRATION] 立即更新快照，确保实时性
+        if (use_shm_) {
+            MarketSnapshot::instance().update(rec);
+        }
         if (!rb_.push(rec)) {
             // 记录丢失警告
         }
@@ -195,6 +211,12 @@ private:
             initial_capacity_ = doc["initial_capacity"].as<uint64_t>();
         } else {
             initial_capacity_ = 50000000;  // 默认 5000 万条
+        }
+
+        // SHM 配置
+        if (doc["shm"]) {
+            use_shm_ = true;
+            shm_path_ = doc["shm"].as<std::string>();
         }
     }
 
@@ -258,6 +280,11 @@ private:
     uint32_t start_time_ = 0;
     uint32_t end_time_ = 0;
     uint64_t initial_capacity_ = 50000000;  // 初始容量（默认 5000 万条）
+
+    // SHM 支持
+    bool use_shm_ = false;
+    std::string shm_path_ = "/hft_md_snapshot";
+    std::unique_ptr<MarketSnapshot> shm_impl_;
 
     CThostFtdcMdApi* md_api_ = nullptr;
     RingBuffer<TickRecord, 65536> rb_;

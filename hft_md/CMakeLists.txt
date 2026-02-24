@@ -15,21 +15,21 @@ include_directories(${CMAKE_SOURCE_DIR}/../../gateway_ctp/include)
 
 # Library paths
 link_directories(../third_party/ctp/lib)
+link_directories(${CMAKE_SOURCE_DIR}/../bin) # 为了找到 libhft_core.so
 
 # Source files
 set(SOURCES src/main.cpp)
-
-# Add symbol_manager source (needed by Recorder)
-set(SOURCES ${SOURCES} ../core/src/symbol_manager.cpp)
 
 # Executable
 add_executable(hft_recorder ${SOURCES})
 
 # Links
-target_link_libraries(hft_recorder thostmduserapi_se pthread yaml-cpp)
+# 链接 hft_core 以获得 MarketSnapshot 和 SymbolManager 支持
+target_link_libraries(hft_recorder hft_core thostmduserapi_se pthread yaml-cpp)
 
 # Tool: Data Reader
 add_executable(hft_reader tools/read_dat.cpp)
+target_link_libraries(hft_reader hft_core pthread)
 
 # Installation/Output info
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
