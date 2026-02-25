@@ -1,5 +1,10 @@
 trading_day: '20260131'
 
+snapshot:
+  type: "shm"
+  path: "/hft_snapshot"
+  is_writer: false
+
 plugins:
   - name: WebSocket_Monitor
     library: "../bin/libmod_monitor.so"
@@ -7,7 +12,7 @@ plugins:
     config:
       ws_port: 8877
       pub_addr: "tcp://*:5555"
-      debug: true
+      debug: false
   
   - name: CTP_Trade_Real_1
     library: "../bin/libmod_ctp_real.so"
@@ -17,7 +22,9 @@ plugins:
       broker_id: "9999"
       user_id: "247060"
       password: "RY20000219*"
-      debug: true
+      debug: false
+      reconnect_times: "08:55:00-15:30:00,20:55:00-02:35:00"  # 白天+夜盘（提前延后5分钟）
+      reconnect_delay: 30
   
   - name: CTP_Trade_Real_2
     library: "../bin/libmod_ctp_real.so"
@@ -27,12 +34,33 @@ plugins:
       broker_id: "9999"
       user_id: "253535"
       password: "20051215@Jenny"
-      debug: true
+      debug: false
+      reconnect_times: "08:55:00-15:30:00,20:55:00-02:35:00"  # 白天+夜盘（提前延后5分钟）
+      reconnect_delay: 30
+
+  - name: CTP_Trade_Real_3
+    library: "../bin/libmod_ctp_real.so"
+    enabled: true
+    config:
+      td_front: "tcp://182.254.243.31:30001"
+      broker_id: "9999"
+      user_id: "255028"
+      password: "Jzx1357924680!"
+      debug: false
+      reconnect_times: "08:55:00-15:30:00,20:55:00-02:35:00"  # 白天+夜盘（提前延后5分钟）
+      reconnect_delay: 30
+
+  - name: Order_Manager
+    library: "../bin/libmod_order.so"
+    enabled: true
+    config:
+      node_id: 1
+      debug: false
 
   - name: Position_Manager
     library: "../bin/libmod_position.so"
     enabled: true
     config:
       dump_path: "../data/pos_real.json"
-      query_interval: 10 # 主动查询间隔(秒)
+      query_interval: 15 # 主动查询间隔(秒)
 

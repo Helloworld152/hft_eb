@@ -1,0 +1,22 @@
+[package]
+name = "hft_reader"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "hft_reader"
+path = "src/lib.rs"
+
+[[bin]]
+name = "hft_reader"
+path = "src/bin/hft_reader.rs"
+
+[[bin]]
+name = "snapshot_reader"
+path = "src/bin/snapshot_reader.rs"
+
+[dependencies]
+memmap2 = "0.9"
+clap = { version = "4.0", features = ["derive"] }
+polars = { version = "0.36", features = ["parquet", "lazy"] }
+anyhow = "1.0"

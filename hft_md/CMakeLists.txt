@@ -18,7 +18,10 @@ link_directories(../third_party/ctp/lib)
 link_directories(${CMAKE_SOURCE_DIR}/../bin) # 为了找到 libhft_core.so
 
 # Source files
-set(SOURCES src/main.cpp)
+set(SOURCES
+    src/main.cpp
+    src/Recorder.cpp
+)
 
 # Executable
 add_executable(hft_recorder ${SOURCES})
@@ -47,4 +50,3 @@ FetchContent_Declare(
   GIT_TAG        0.8.0
 )
 FetchContent_MakeAvailable(yaml-cpp)
-
