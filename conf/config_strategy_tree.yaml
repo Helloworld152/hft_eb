@@ -15,18 +15,37 @@ plugins:
     enabled: true
     config:
       nodes:
+        - id: FACTOR_SMA
+          library: "../bin/libstrat_sma.so"
+          params:
+            window_size: 20
+            multiplier: 1000.0
+            debug: false
+
+        - id: FACTOR_IMB
+          library: "../bin/libstrat_imbalance.so"
+          params:
+            debug: false
+
         - id: FACTOR_JUMP
           library: "../bin/libstrat_price_jump.so"
           params:
             threshold: 0.1
             debug: true
-        
-        - id: COMBINER_01
-          library: "../bin/libstrat_grid.so"
+
+        - id: CS_COMBINER
+          library: "../bin/libstrat_cs_combiner.so"
           params:
-            threshold: 1.0
             debug: true
-        
+            top_pct: 0.2
+            bottom_pct: 0.2
+            base_volume: 1
+            symbols_file: "../conf/symbols.txt"
+            weights:
+              SMA_Diff: 0.5
+              Imbalance: 0.3
+              PriceJump: 0.2
+
         - id: STAT_ARB_AU
           library: "../bin/libstrat_stat_arb.so"
           params:

@@ -109,6 +109,12 @@ add_library(strat_grid SHARED modules/strategy/grid_strategy.cpp)
 target_include_directories(strat_grid PRIVATE include)
 target_link_libraries(strat_grid PRIVATE hft_core yaml-cpp)
 
+
+# 2.2.1 编译插件 B-Leaf: Cross-Section Combiner (Leaf)
+add_library(strat_cs_combiner SHARED modules/strategy/cs_combiner_node.cpp)
+target_include_directories(strat_cs_combiner PRIVATE include)
+target_link_libraries(strat_cs_combiner PRIVATE hft_core yaml-cpp)
+
 # 2.3 编译插件 B-Leaf: Price Jump Factor (Leaf)
 add_library(strat_price_jump SHARED modules/strategy/price_jump_node.cpp)
 target_include_directories(strat_price_jump PRIVATE include)
@@ -208,4 +214,3 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(yaml-cpp ixwebsocket json)
-

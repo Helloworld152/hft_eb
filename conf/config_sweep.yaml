@@ -1,0 +1,19 @@
+# SweepTrader Test Configuration
+engine:
+  name: "hft_engine"
+  log_level: "INFO"
+
+modules:
+  - name: "libmod_ctp.so"         # 模拟行情插件
+    symbol: "au2606,rb2505"
+    
+  - name: "libmod_trade.so"       # 模拟成交插件
+  
+  - name: "libmod_sweep_trader.so" # 我们的扫单插件
+    order_dir: "../data/orders"
+    default_price_strategy: "opp" # 对手价成交
+    scan_interval_ms: 1000
+    default_account: "888888"
+
+  - name: "libmod_risk.so"        # 基础风控
+    max_order_size: 100

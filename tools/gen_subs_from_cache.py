@@ -1,10 +1,32 @@
 import json
-import yaml
+import os
 import sys
+import yaml
 
 ins_file = "/tmp/latest_ins_cache.json"
 symbols_file = "conf/symbols.txt"
 config_file = "hft_md/conf/config.yaml"
+
+# 先从 txt 读取已有 symbol -> id，保证同合约 id 确定性
+symbol_to_id = {}
+max_id = 10000000
+if os.path.exists(symbols_file):
+    with open(symbols_file, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(":", 2)
+            if len(parts) >= 2:
+                try:
+                    sid = int(parts[0])
+                    sym = parts[1]
+                    if sym not in symbol_to_id:
+                        symbol_to_id[sym] = sid
+                        max_id = max(max_id, sid)
+                except ValueError:
+                    pass
+    print(f"Loaded {len(symbol_to_id)} existing symbols from {symbols_file} (max_id={max_id})")
 
 print(f"Loading {ins_file}...")
 
@@ -48,6 +70,7 @@ for key, val in data.items():
     if ctp_id not in contract_pairs:
         contract_pairs[ctp_id] = multiplier
 
+# 按合约代码排序，保证 symbols.txt 与 config.yaml 中列表顺序一致且可复现
 contracts = sorted(contract_pairs.keys())
 
 print(f"Selected {len(contracts)} contracts (Skipped: {skipped_expired} expired, {skipped_type} non-future)")
@@ -56,11 +79,21 @@ if len(contracts) == 0:
     print("No contracts found! Check filters.")
     sys.exit(1)
 
-# --- Step 1: Write symbols.txt (id:symbol:multiplier) ---
+# --- Step 1: Write symbols.txt (id:symbol:multiplier)，沿用已有 id，新合约从 max_id+1 起顺序分配，按 id 数字排序输出 ---
+next_new_id = max_id + 1
+rows = []
+for c in contracts:
+    if c in symbol_to_id:
+        sid = symbol_to_id[c]
+    else:
+        sid = next_new_id
+        symbol_to_id[c] = sid
+        next_new_id += 1
+    rows.append((sid, c, contract_pairs[c]))
+rows.sort(key=lambda x: x[0])
 with open(symbols_file, "w") as f:
-    start_id = 10000001
-    for i, c in enumerate(contracts):
-        f.write(f"{start_id + i}:{c}:{contract_pairs[c]}\n")
+    for sid, c, mult in rows:
+        f.write(f"{sid}:{c}:{mult}\n")
 print(f"Updated {symbols_file}")
 
 # --- Step 2: Update config.yaml ---

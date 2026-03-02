@@ -1,9 +1,11 @@
-#include "Recorder.cpp"
+#include "Recorder.h"
 #include <iostream>
 #include <csignal>
 #include <atomic>
 #include <thread>
 #include <chrono>
+#include <memory>
+#include <string>
 
 static std::atomic<bool> g_shutdown(false);
 static TickRecorder* g_recorder = nullptr;
