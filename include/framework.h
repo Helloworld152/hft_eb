@@ -3,9 +3,10 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
-#include <functional>
+#include <functional>  // 保留用于兼容接口
 #include <iostream>
 #include <array>
+#include "static_delegate.h"
 #include "../core/include/protocol.h" // 引入 TickRecord 定义
 
 // ==========================================
@@ -41,13 +42,19 @@ enum EventType {
 // ==========================================
 class EventBus {
 public:
-    using Handler = std::function<void(void*)>;
-    
+    using Handler = StaticDelegate<void(void*)>;
+
     virtual ~EventBus() = default;
 
+    // 新接口：高性能 StaticDelegate
     virtual void subscribe(EventType type, Handler handler) = 0;
+
+    // 兼容接口：接受 std::function（性能较低，用于过渡）
+    [[deprecated("请迁移到 StaticDelegate 接口以获得更好性能")]]
+    virtual void subscribe(EventType type, std::function<void(void*)> handler) = 0;
+
     virtual void publish(EventType type, void* data) = 0;
-    
+
     // 安全退出：清空所有回调
     virtual void clear() = 0;
 };
@@ -57,8 +64,15 @@ public:
 // ==========================================
 class ITimerService {
 public:
+    using TimerCallback = StaticDelegate<void()>;
+
     virtual ~ITimerService() = default;
-    // 每 interval_sec 秒执行一次 callback；phase_sec 为相位(0~interval_sec-1)，首次触发在 total_seconds % interval_sec == phase_sec 的时刻
+
+    // 新接口：高性能 StaticDelegate
+    virtual void add_timer(int interval_sec, TimerCallback callback, int phase_sec = 0) = 0;
+
+    // 兼容接口：接受 std::function（性能较低，用于过渡）
+    [[deprecated("请迁移到 StaticDelegate 接口以获得更好性能")]]
     virtual void add_timer(int interval_sec, std::function<void()> callback, int phase_sec = 0) = 0;
 };
 
@@ -81,6 +95,8 @@ public:
 // ==========================================
 // 5. 二级策略插件接口 (Strategy Tree Leaf)
 // ==========================================
+// 注意：StrategyContext 使用 std::function 而非 StaticDelegate
+// 因为策略节点需要 lambda 捕获上下文（this, id等）
 struct StrategyContext {
     std::string strategy_id;
     std::function<void(const OrderReq&)> send_order;

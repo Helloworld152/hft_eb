@@ -1,7 +1,7 @@
 #!/bin/bash
 mkdir -p build
 cd build
-cmake ..
+cmake -DCMAKE_BUILD_TYPE=Release ..
 make -j4
 cd ..
 echo "Build finished. Binary is in hft_md/bin/"

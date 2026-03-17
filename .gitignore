@@ -3,3 +3,9 @@ data/
 build/
 .cache/
 log/
+demo/
+
+target/
+nohup.out
+
+*.lock

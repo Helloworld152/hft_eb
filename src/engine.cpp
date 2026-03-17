@@ -13,6 +13,7 @@
 #include <atomic>
 #include <memory>
 #include <cstdint>
+#include <functional>  // 保留用于兼容接口
 
 #include <yaml-cpp/yaml.h>
 
@@ -27,37 +28,62 @@ void signal_handler(int signum) {
 // Internal Implementations
 // ==========================================
 
-// --- EventBus 实现 (std::vector<std::function>) ---
+// --- EventBus 实现 (兼容 StaticDelegate 和 std::function) ---
 class EventBusImpl : public EventBus {
 public:
+    // 新接口：高性能 StaticDelegate
     void subscribe(EventType type, Handler handler) override {
-        handlers_[type].push_back(std::move(handler));
+        sd_handlers_[type].push_back(std::move(handler));
+    }
+
+    // 兼容接口：std::function（用于过渡）
+    void subscribe(EventType type, std::function<void(void*)> handler) override {
+        func_handlers_[type].push_back(std::move(handler));
     }
 
     void publish(EventType type, void* data) override {
-        // 热路径优化：移除边界检查以提升分发性能
-        for (const auto& handler : handlers_[type]) {
+        // 先调用高性能 StaticDelegate handlers
+        for (const auto& handler : sd_handlers_[type]) {
+            handler(data);
+        }
+        // 再调用兼容 std::function handlers
+        for (const auto& handler : func_handlers_[type]) {
             handler(data);
         }
     }
 
     void clear() override {
-        for (auto& vec : handlers_) {
+        for (auto& vec : sd_handlers_) {
+            vec.clear();
+        }
+        for (auto& vec : func_handlers_) {
             vec.clear();
         }
     }
 
 private:
-    std::array<std::vector<Handler>, MAX_EVENTS> handlers_;
+    std::array<std::vector<Handler>, MAX_EVENTS> sd_handlers_;              // StaticDelegate handlers
+    std::array<std::vector<std::function<void(void*)>>, MAX_EVENTS> func_handlers_;  // 兼容 handlers
 };
 
 // --- Engine 定时器适配：ITimerService 实现，转发到 Engine::add_timer_impl ---
 class EngineTimerAdapter : public ITimerService {
 public:
     explicit EngineTimerAdapter(HftEngine* engine) : engine_(engine) {}
-    void add_timer(int interval_sec, std::function<void()> callback, int phase_sec = 0) override {
+
+    // 新接口：高性能 StaticDelegate
+    void add_timer(int interval_sec, TimerCallback callback, int phase_sec = 0) override {
         engine_->add_timer_impl(interval_sec, std::move(callback), phase_sec);
     }
+
+    // 兼容接口：std::function（用于过渡）
+    void add_timer(int interval_sec, std::function<void()> callback, int phase_sec = 0) override {
+        // 包装 std::function 为 StaticDelegate（通过 lambda 捕获，有开销）
+        // 注意：这里使用堆分配来保持 lambda 存活，仅用于兼容
+        auto* wrapper = new std::function<void()>(std::move(callback));
+        engine_->add_timer_func(interval_sec, wrapper, phase_sec);
+    }
+
 private:
     HftEngine* engine_;
 };
@@ -282,21 +308,48 @@ void HftEngine::run() {
     stop();
 }
 
-void HftEngine::add_timer_impl(int interval_sec, std::function<void()> cb, int phase_sec) {
+void HftEngine::add_timer_impl(int interval_sec, StaticDelegate<void()> cb, int phase_sec) {
     if (interval_sec <= 0) return;
     int phase = (phase_sec % interval_sec + interval_sec) % interval_sec;
-    // 首次触发在「下一次 run_due_timers」之后、且 total_seconds % interval == phase 的最早时刻
     uint64_t first_run = total_seconds_ + 1;
     uint64_t base = (first_run / static_cast<uint64_t>(interval_sec)) * static_cast<uint64_t>(interval_sec);
     uint64_t next_fire = base + static_cast<uint64_t>(phase);
     if (next_fire < first_run) next_fire += static_cast<uint64_t>(interval_sec);
-    timer_tasks_.push_back({ interval_sec, next_fire, std::move(cb) });
+    TimerTask task;
+    task.interval_sec = interval_sec;
+    task.next_fire = next_fire;
+    task.sd_callback = std::move(cb);
+    task.is_static_delegate = true;
+    timer_tasks_.push_back(std::move(task));
+}
+
+void HftEngine::add_timer_func(int interval_sec, std::function<void()>* cb, int phase_sec) {
+    if (interval_sec <= 0) {
+        delete cb;
+        return;
+    }
+    int phase = (phase_sec % interval_sec + interval_sec) % interval_sec;
+    uint64_t first_run = total_seconds_ + 1;
+    uint64_t base = (first_run / static_cast<uint64_t>(interval_sec)) * static_cast<uint64_t>(interval_sec);
+    uint64_t next_fire = base + static_cast<uint64_t>(phase);
+    if (next_fire < first_run) next_fire += static_cast<uint64_t>(interval_sec);
+    TimerTask task;
+    task.interval_sec = interval_sec;
+    task.next_fire = next_fire;
+    task.func_callback = std::move(*cb);
+    task.is_static_delegate = false;
+    timer_tasks_.push_back(std::move(task));
+    delete cb;
 }
 
 void HftEngine::run_due_timers() {
     for (auto& t : timer_tasks_) {
         if (total_seconds_ >= t.next_fire) {
-            t.callback();
+            if (t.is_static_delegate) {
+                t.sd_callback();
+            } else {
+                t.func_callback();
+            }
             t.next_fire += static_cast<uint64_t>(t.interval_sec);
         }
     }
