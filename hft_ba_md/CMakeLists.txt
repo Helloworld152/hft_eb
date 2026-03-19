@@ -45,6 +45,7 @@ target_compile_definitions(
   PRIVATE
   CCAPI_ENABLE_SERVICE_MARKET_DATA
   CCAPI_ENABLE_EXCHANGE_BINANCE
+  CCAPI_ENABLE_EXCHANGE_BINANCE_USDS_FUTURES
 )
 
 # Installation/Output info
@@ -80,13 +81,23 @@ else()
   FetchContent_MakeAvailable(yaml-cpp json)
 endif()
 
-# CCAPI
-FetchContent_Declare(
-  ccapi
-  GIT_REPOSITORY https://github.com/crypto-chassis/ccapi.git
-  GIT_TAG        v7.8.0
-)
-FetchContent_MakeAvailable(ccapi)
+# ==========================================
+# CCAPI (优先使用本项目 build/_deps)
+# ==========================================
+set(CCAPI_LOCAL_DIR "${CMAKE_SOURCE_DIR}/build/_deps/ccapi-src")
+if (EXISTS ${CCAPI_LOCAL_DIR})
+  message(STATUS "Using local CCAPI from main project: ${CCAPI_LOCAL_DIR}")
+  set(ccapi_SOURCE_DIR ${CCAPI_LOCAL_DIR})
+else()
+  # 回退到 FetchContent
+  message(STATUS "Local CCAPI not found, fetching from GitHub...")
+  FetchContent_Declare(
+    ccapi
+    GIT_REPOSITORY https://github.com/crypto-chassis/ccapi.git
+    GIT_TAG        v7.8.0
+  )
+  FetchContent_MakeAvailable(ccapi)
+endif()
 
 # RapidJSON (system provided)
 find_path(RAPIDJSON_INCLUDE_DIR rapidjson/document.h)

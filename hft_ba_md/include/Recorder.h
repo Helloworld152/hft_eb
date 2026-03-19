@@ -47,5 +47,6 @@ private:
 
     std::thread ws_thread_;
     std::atomic<bool> running_{false};
+    bool debug_ = false;  // 是否打印行情输出
 
 };

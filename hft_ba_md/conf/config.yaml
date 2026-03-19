@@ -1,9 +1,14 @@
 ws_base: wss://stream.binance.com:9443
 proxy: 192.168.7.9:7890
 symbols:
+  # 现货
   - BTCUSDT
   - ETHUSDT
-trading_day: '20260317'
+  # 永续合约（添加 _PERP 后缀）
+  - BTCUSDT_PERP
+  - ETHUSDT_PERP
+trading_day: '20260319'
 start_time: 00:00:00
 end_time: 23:59:59
 shm: /hft_ba_md_snapshot
+debug: true  # 启用行情打印（默认 false）

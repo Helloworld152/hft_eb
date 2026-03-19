@@ -154,6 +154,11 @@ void BaTickRecorder::load_config(const std::string& config_path) {
         use_shm_ = true;
         shm_path_ = doc["shm"].as<std::string>();
     }
+
+    if (doc["debug"]) {
+        std::string debug_str = doc["debug"].as<std::string>();
+        debug_ = (debug_str == "true" || debug_str == "1" || debug_str == "yes");
+    }
 }
 
 uint32_t BaTickRecorder::parse_time(const std::string& time_str) {
@@ -186,22 +191,35 @@ void BaTickRecorder::connect_loop() {
     BaCcapiEventHandler event_handler(this);
     ccapi::Session session(session_options, session_configs, &event_handler);
 
+    std::cout << "[BaRecorder] CCAPI session created. Preparing subscriptions..." << std::endl;
+
     std::vector<ccapi::Subscription> subscriptions;
-    subscriptions.reserve(symbols_.size());
+    subscriptions.reserve(symbols_.size() * 2);  // depth + ticker
 
     for (const auto& sym : symbols_) {
-        std::string depth_correlation_id = "md:" + sym;
-        std::string options = "MARKET_DEPTH_MAX=5&CONFLATE_INTERVAL_MILLISECONDS=1000";
+        // 检查是否为永续合约（以 _PERP 结尾）
+        bool is_perp = (sym.size() > 5 && sym.compare(sym.size() - 5, 5, "_PERP") == 0);
+        
+        std::string base_symbol = is_perp ? sym.substr(0, sym.size() - 5) : sym;
+        std::string exchange = is_perp ? "binance-usds-futures" : "binance";
+        std::string ccapi_symbol = base_symbol;
 
+        // 1. 订阅深度行情
+        std::string depth_cid = "md:" + sym;
+        std::string depth_options = "MARKET_DEPTH_MAX=5&CONFLATE_INTERVAL_MILLISECONDS=1000";
         if (proxy_.empty()) {
-            subscriptions.emplace_back("binance", sym, "MARKET_DEPTH", options, depth_correlation_id);
+            subscriptions.emplace_back(exchange, ccapi_symbol, "MARKET_DEPTH", depth_options, depth_cid);
         } else {
             std::map<std::string, std::string> credential;
-            subscriptions.emplace_back("binance", sym, "MARKET_DEPTH", options, depth_correlation_id, credential, proxy_);
+            subscriptions.emplace_back(exchange, ccapi_symbol, "MARKET_DEPTH", depth_options, depth_cid, credential, proxy_);
         }
+
     }
 
+    std::cout << "[BaRecorder] Subscribing to " << subscriptions.size()
+              << " streams." << std::endl;
     session.subscribe(subscriptions);
+    std::cout << "[BaRecorder] Subscribe request sent." << std::endl;
 
     while (running_) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -213,14 +231,32 @@ void BaTickRecorder::connect_loop() {
 void BaTickRecorder::handle_event(const ccapi::Event& event) {
     if (event.getType() == ccapi::Event::Type::SUBSCRIPTION_STATUS) {
         for (const auto& message : event.getMessageList()) {
-            if (message.getType() == ccapi::Message::Type::SUBSCRIPTION_FAILURE || message.getType() == ccapi::Message::Type::GENERIC_ERROR) {
+            const auto type = message.getType();
+            const auto& cids = message.getCorrelationIdList();
+            std::cout << "[BaRecorder] Subscription status: "
+                      << ccapi::Message::typeToString(type);
+            if (!cids.empty()) {
+                std::cout << " cids=[";
+                for (size_t i = 0; i < cids.size(); ++i) {
+                    if (i) std::cout << ",";
+                    std::cout << cids[i];
+                }
+                std::cout << "]";
+            }
+            std::cout << std::endl;
+
+            if (type == ccapi::Message::Type::SUBSCRIPTION_FAILURE ||
+                type == ccapi::Message::Type::SUBSCRIPTION_FAILURE_DUE_TO_CONNECTION_FAILURE ||
+                type == ccapi::Message::Type::GENERIC_ERROR ||
+                type == ccapi::Message::Type::INCORRECT_STATE_FOUND) {
                 for (const auto& el : message.getElementList()) {
                     const auto& m = el.getNameValueMap();
+                    if (m.empty()) {
+                        continue;
+                    }
+                    std::cerr << "[BaRecorder] Subscription error details:" << std::endl;
                     for (const auto& kv : m) {
-                        if (kv.first == "ERROR_MESSAGE" || kv.first == "REASON") {
-                            std::cerr << "[BaRecorder] Subscription error: " << kv.second << std::endl;
-                            break;
-                        }
+                        std::cerr << "  " << kv.first << "=" << kv.second << std::endl;
                     }
                 }
             }
@@ -291,21 +327,23 @@ void BaTickRecorder::handle_depth_message(const ccapi::Message& message, const s
         rec.ask_volume[i] = asks[i].second;
     }
 
-    // 打印收到的快照
-    std::cout << "[SNAPSHOT] " << symbol << " @ " << rec.update_time << " | ";
-    std::cout << "BID: ";
-    for (int i = 0; i < 5; ++i) {
-        if (rec.bid_price[i] > 0) {
-            std::cout << rec.bid_price[i] << "x" << rec.bid_volume[i] << " ";
+    // 打印收到的快照（仅 debug 模式）
+    if (debug_) {
+        std::cout << "[SNAPSHOT] " << symbol << " @ " << rec.update_time << " | ";
+        std::cout << "BID: ";
+        for (int i = 0; i < 5; ++i) {
+            if (rec.bid_price[i] > 0) {
+                std::cout << rec.bid_price[i] << "x" << rec.bid_volume[i] << " ";
+            }
         }
-    }
-    std::cout << "| ASK: ";
-    for (int i = 0; i < 5; ++i) {
-        if (rec.ask_price[i] > 0) {
-            std::cout << rec.ask_price[i] << "x" << rec.ask_volume[i] << " ";
+        std::cout << "| ASK: ";
+        for (int i = 0; i < 5; ++i) {
+            if (rec.ask_price[i] > 0) {
+                std::cout << rec.ask_price[i] << "x" << rec.ask_volume[i] << " ";
+            }
         }
+        std::cout << std::endl;
     }
-    std::cout << std::endl;
 
     MarketSnapshot::instance().update(rec);
 }

@@ -136,9 +136,6 @@ bool HftEngine::loadConfig(const std::string& config_path) {
         std::cerr << "[System] Warning: Failed to load libhft_core.so globally: " << dlerror() << std::endl;
     }
 
-    // 加载全局品种映射表
-    SymbolManager::instance().load("conf/symbols.txt");
-
     YAML::Node config;
     try {
         config = YAML::LoadFile(config_path);
@@ -146,6 +143,13 @@ bool HftEngine::loadConfig(const std::string& config_path) {
         std::cerr << "FATAL: YAML Parse Error: " << e.what() << std::endl;
         return false;
     }
+
+    // 加载全局品种映射表（可由配置覆盖）
+    std::string symbols_file = "conf/symbols.txt";
+    if (config["symbols_file"]) {
+        symbols_file = config["symbols_file"].as<std::string>();
+    }
+    SymbolManager::instance().load(symbols_file);
 
     // [INTEGRATION] 初始化截面 (Local 或 Shm)
     if (config["snapshot"]) {
