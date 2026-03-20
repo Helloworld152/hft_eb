@@ -1,0 +1,50 @@
+trading_hours:
+  start: "09:00:00"
+  end: "23:00:00"
+
+plugins:
+  - name: Replay
+    library: "bin/libmod_replay.so"
+    enabled: true
+    config:
+      data_file: "data/market_data_20260320"
+      interval_ms: 1
+
+  - name: StrategyTreeParallel
+    library: "bin/libmod_strategy_tree_parallel.so"
+    enabled: true
+    config:
+      parallel: false
+      shard_by: "symbol"
+      shard_count: 8
+      queue_capacity: 8192
+      publish_signals: true
+      nodes:
+        - id: FACTOR_SMA
+          library: "bin/libstrat_sma.so"
+          params:
+            window_size: 20
+            multiplier: 1000.0
+            debug: false
+
+        - id: FACTOR_IMB
+          library: "bin/libstrat_imbalance.so"
+          params:
+            debug: false
+
+        - id: FACTOR_JUMP
+          library: "bin/libstrat_price_jump.so"
+          params:
+            threshold: 0.1
+            debug: false
+
+  - name: SignalCsv
+    library: "bin/libmod_signal_csv.so"
+    enabled: true
+    config:
+      output_path: "log/signal_20260320_full.csv"
+      capacity: 1048576
+      overwrite: false
+      flush_every: 5000
+      include_header: true
+      log_interval_ms: 1000

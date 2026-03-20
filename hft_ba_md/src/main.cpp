@@ -1,5 +1,4 @@
 #include "Recorder.h"
-
 #include <atomic>
 #include <csignal>
 #include <chrono>

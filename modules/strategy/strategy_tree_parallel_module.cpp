@@ -17,55 +17,6 @@
 #include <immintrin.h>
 
 // ------------------------------
-// Local utilities (SPSC queue)
-// ------------------------------
-template <typename T>
-class SpscQueue {
-public:
-    explicit SpscQueue(size_t capacity_pow2)
-        : capacity_(round_up_pow2(capacity_pow2)),
-          mask_(capacity_ - 1),
-          buffer_(capacity_) {}
-
-    bool push(const T& item) {
-        const size_t tail = tail_.load(std::memory_order_relaxed);
-        const size_t head = head_.load(std::memory_order_acquire);
-        if (tail - head >= capacity_) return false;
-        buffer_[tail & mask_] = item;
-        tail_.store(tail + 1, std::memory_order_release);
-        return true;
-    }
-
-    bool pop(T& item) {
-        const size_t head = head_.load(std::memory_order_relaxed);
-        const size_t tail = tail_.load(std::memory_order_acquire);
-        if (head == tail) return false;
-        item = buffer_[head & mask_];
-        head_.store(head + 1, std::memory_order_release);
-        return true;
-    }
-
-private:
-    static size_t round_up_pow2(size_t v) {
-        if (v < 2) return 2;
-        v--;
-        v |= v >> 1;
-        v |= v >> 2;
-        v |= v >> 4;
-        v |= v >> 8;
-        v |= v >> 16;
-        if (sizeof(size_t) >= 8) v |= v >> 32;
-        return v + 1;
-    }
-
-    const size_t capacity_;
-    const size_t mask_;
-    std::vector<T> buffer_;
-    alignas(CACHE_LINE_SIZE) std::atomic<size_t> head_{0};
-    alignas(CACHE_LINE_SIZE) std::atomic<size_t> tail_{0};
-};
-
-// ------------------------------
 // Parallel Strategy Tree Module
 // ------------------------------
 class ParallelStrategyTreeModule : public IModule {
@@ -122,11 +73,14 @@ public:
         shards_.clear();
         shards_.reserve(shard_count_);
         for (size_t i = 0; i < shard_count_; ++i) {
-            shards_.emplace_back(queue_capacity_);
+            shards_.push_back(std::make_unique<ShardContext>(queue_capacity_));
         }
 
         // Load nodes
         for (const auto& node_cfg : doc["nodes"]) {
+            if (node_cfg["enabled"] && node_cfg["enabled"].as<bool>() == false) {
+                continue;
+            }
             if (!node_cfg["id"] || !node_cfg["library"]) continue;
 
             std::string id = node_cfg["id"].as<std::string>();
@@ -175,7 +129,7 @@ public:
 
             if (node_parallel) {
                 for (size_t s = 0; s < shard_count_; ++s) {
-                    add_node_instance(id, create_fn, node_config, shards_[s].nodes);
+                    add_node_instance(id, create_fn, node_config, shards_[s]->nodes);
                 }
             } else {
                 add_node_instance(id, create_fn, node_config, serial_nodes_);
@@ -185,17 +139,14 @@ public:
         // Event routing
         bus_->subscribe(EVENT_MARKET_DATA, [this](void* d) {
             on_tick(static_cast<TickRecord*>(d));
-            drain_signals();
         });
 
         bus_->subscribe(EVENT_KLINE, [this](void* d) {
             on_kline(static_cast<KlineRecord*>(d));
-            drain_signals();
         });
 
         bus_->subscribe(EVENT_RTN_ORDER, [this](void* d) {
             on_order_update(static_cast<OrderRtn*>(d));
-            drain_signals();
         });
     }
 
@@ -203,19 +154,22 @@ public:
         if (running_) return;
         running_ = true;
         for (auto& shard : shards_) {
-            shard.worker = std::thread([this, &shard]() { shard_loop(shard); });
+            auto* shard_ptr = shard.get();
+            shard->worker = std::thread([this, shard_ptr]() { shard_loop(*shard_ptr); });
         }
+        signal_worker_ = std::thread([this]() { signal_loop(); });
     }
 
     void stop() override {
         if (!running_) return;
         running_ = false;
+        if (signal_worker_.joinable()) signal_worker_.join();
         for (auto& shard : shards_) {
-            if (shard.worker.joinable()) shard.worker.join();
+            if (shard->worker.joinable()) shard->worker.join();
         }
         // Ensure no callbacks occur after nodes are destroyed
         serial_nodes_.clear();
-        for (auto& shard : shards_) shard.nodes.clear();
+        for (auto& shard : shards_) shard->nodes.clear();
 
         for (auto& lib : libs_) {
             if (lib.lib_handle) dlclose(lib.lib_handle);
@@ -249,8 +203,10 @@ private:
     };
 
     struct ShardContext {
-        explicit ShardContext(size_t queue_capacity) : queue(queue_capacity) {}
-        SpscQueue<WorkItem> queue;
+        explicit ShardContext(size_t queue_capacity)
+            : work_queue(queue_capacity), signal_queue(queue_capacity) {}
+        SpscQueue<WorkItem> work_queue;   // Tick/Kline/OrderUpdate (single producer: event thread)
+        SpscQueue<WorkItem> signal_queue; // Signal (single producer: signal thread)
         std::vector<NodeInstance> nodes; // parallel nodes only
         std::thread worker;
     };
@@ -291,21 +247,26 @@ private:
     }
 
     void enqueue_signal(const SignalRecord& sig) {
-        while (!signal_queue_.push(sig)) {
+        while (running_ && !signal_queue_.push(sig)) {
             _mm_pause();
         }
     }
 
-    void drain_signals() {
+    void signal_loop() {
         SignalRecord sig;
-        while (signal_queue_.pop(sig)) {
+        while (running_) {
+            if (!signal_queue_.pop(sig)) {
+                _mm_pause();
+                continue;
+            }
+
             // 1) Send to parallel nodes (sharded by symbol)
             if (!shards_.empty()) {
                 size_t shard = shard_for_symbol(sig.symbol);
                 WorkItem item;
                 item.type = WorkItem::Type::Signal;
                 item.signal = sig;
-                while (!shards_[shard].queue.push(item)) {
+                while (running_ && !shards_[shard]->signal_queue.push(item)) {
                     _mm_pause();
                 }
             }
@@ -324,6 +285,7 @@ private:
     }
 
     void on_tick(const TickRecord* tick) {
+        if (!running_) return;
         // Serial nodes first (single thread)
         for (auto& n : serial_nodes_) {
             n.node->onTick(tick);
@@ -336,12 +298,13 @@ private:
         item.tick = *tick;
 
         size_t shard = shard_for_tick(*tick);
-        while (!shards_[shard].queue.push(item)) {
+        while (running_ && !shards_[shard]->work_queue.push(item)) {
             _mm_pause();
         }
     }
 
     void on_kline(const KlineRecord* kline) {
+        if (!running_) return;
         for (auto& n : serial_nodes_) {
             n.node->onKline(kline);
         }
@@ -352,12 +315,13 @@ private:
         item.type = WorkItem::Type::Kline;
         item.kline = *kline;
         size_t shard = shard_for_symbol(kline->symbol);
-        while (!shards_[shard].queue.push(item)) {
+        while (running_ && !shards_[shard]->work_queue.push(item)) {
             _mm_pause();
         }
     }
 
     void on_order_update(const OrderRtn* rtn) {
+        if (!running_) return;
         for (auto& n : serial_nodes_) {
             n.node->onOrderUpdate(rtn);
         }
@@ -368,7 +332,7 @@ private:
         item.type = WorkItem::Type::OrderUpdate;
         item.order = *rtn;
         size_t shard = shard_for_symbol(rtn->symbol);
-        while (!shards_[shard].queue.push(item)) {
+        while (running_ && !shards_[shard]->work_queue.push(item)) {
             _mm_pause();
         }
     }
@@ -376,34 +340,37 @@ private:
     void shard_loop(ShardContext& shard) {
         WorkItem item;
         while (running_) {
-            if (!shard.queue.pop(item)) {
-                _mm_pause();
+            if (shard.signal_queue.pop(item)) {
+                for (auto& n : shard.nodes) {
+                    if (n.id == item.signal.source_id) continue;
+                    n.node->onSignal(&item.signal);
+                }
                 continue;
             }
-
-            switch (item.type) {
-                case WorkItem::Type::Tick:
-                    for (auto& n : shard.nodes) {
-                        n.node->onTick(&item.tick);
-                    }
-                    break;
-                case WorkItem::Type::Kline:
-                    for (auto& n : shard.nodes) {
-                        n.node->onKline(&item.kline);
-                    }
-                    break;
-                case WorkItem::Type::OrderUpdate:
-                    for (auto& n : shard.nodes) {
-                        n.node->onOrderUpdate(&item.order);
-                    }
-                    break;
-                case WorkItem::Type::Signal:
-                    for (auto& n : shard.nodes) {
-                        if (n.id == item.signal.source_id) continue;
-                        n.node->onSignal(&item.signal);
-                    }
-                    break;
+            if (shard.work_queue.pop(item)) {
+                switch (item.type) {
+                    case WorkItem::Type::Tick:
+                        for (auto& n : shard.nodes) {
+                            n.node->onTick(&item.tick);
+                        }
+                        break;
+                    case WorkItem::Type::Kline:
+                        for (auto& n : shard.nodes) {
+                            n.node->onKline(&item.kline);
+                        }
+                        break;
+                    case WorkItem::Type::OrderUpdate:
+                        for (auto& n : shard.nodes) {
+                            n.node->onOrderUpdate(&item.order);
+                        }
+                        break;
+                    case WorkItem::Type::Signal:
+                        // Signals are handled in signal_queue.
+                        break;
+                }
+                continue;
             }
+            _mm_pause();
         }
     }
 
@@ -438,9 +405,10 @@ private:
     size_t queue_capacity_ = 4096; // per-shard queue capacity
     ShardBy shard_by_ = ShardBy::SymbolId;
 
-    std::vector<ShardContext> shards_;
+    std::vector<std::unique_ptr<ShardContext>> shards_;
     std::vector<NodeInstance> serial_nodes_;
     std::vector<LibHandle> libs_;
+    std::thread signal_worker_;
 
     static constexpr size_t SIGNAL_QUEUE_CAP = 65536;
     MPMCRingBuffer<SignalRecord, SIGNAL_QUEUE_CAP> signal_queue_;

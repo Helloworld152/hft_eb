@@ -48,6 +48,7 @@ public:
         running_ = false;
         if (thread_.joinable()) thread_.join();
         MarketSnapshot::instance().clear();
+        std::cout << "[Replay] Final Ticks: " << tick_count_ << std::endl;
     }
 
 private:
