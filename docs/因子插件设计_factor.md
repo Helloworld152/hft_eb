@@ -24,3 +24,29 @@ public:
 ## 4. 优势
 - **复用性**: 同一个“移动平均因子”可以被多个策略重用。
 - **热更新**: 修改因子计算公式只需重新编译该插件的 `.so`，无需触动核心交易逻辑。
+
+## 5. 因子组合 (DAG Combiner)
+FactorDAG 支持用组合节点将多个子因子做线性加权。
+
+**组合节点参数**：
+- `weights`: 权重数组，顺序与 `edges` 中子因子顺序一致。
+
+**示例**：
+```yaml
+nodes:
+  - id: f1
+    library: ../bin/libfactor_x.so
+  - id: f2
+    library: ../bin/libfactor_y.so
+  - id: combo
+    library: ../bin/libfactor_combiner.so
+    params:
+      weights: [0.6, 0.4]
+
+edges:
+  - {from: f1, to: combo}
+  - {from: f2, to: combo}
+
+outputs:
+  - {node: combo, factor_name: "combo_factor"}
+```

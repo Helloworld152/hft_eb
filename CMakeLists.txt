@@ -9,6 +9,14 @@ set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 
 include(FetchContent)
 
+# CCAPI (needed by Binance trade plugin)
+FetchContent_Declare(
+  ccapi
+  GIT_REPOSITORY https://github.com/crypto-chassis/ccapi.git
+  GIT_TAG        v7.8.0
+)
+FetchContent_MakeAvailable(ccapi)
+
 # ==========================================
 # 编译优化配置
 # ==========================================
@@ -73,6 +81,15 @@ endif()
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
+# Dependencies
+find_package(Threads REQUIRED)
+find_package(Boost REQUIRED COMPONENTS system)
+find_package(OpenSSL REQUIRED)
+find_path(RAPIDJSON_INCLUDE_DIR rapidjson/document.h)
+if (NOT RAPIDJSON_INCLUDE_DIR)
+  message(FATAL_ERROR "RapidJSON headers not found. Please install rapidjson (include path should contain rapidjson/document.h).")
+endif()
+
 # Global Includes
 include_directories(include)
 include_directories(core/include)
@@ -103,6 +120,10 @@ target_link_libraries(mod_strategy PRIVATE hft_core)
 add_library(mod_strategy_tree SHARED modules/strategy/strategy_tree_module.cpp)
 target_include_directories(mod_strategy_tree PRIVATE include)
 target_link_libraries(mod_strategy_tree PRIVATE hft_core dl yaml-cpp)
+
+add_library(mod_strategy_tree_parallel SHARED modules/strategy/strategy_tree_parallel_module.cpp)
+target_include_directories(mod_strategy_tree_parallel PRIVATE include)
+target_link_libraries(mod_strategy_tree_parallel PRIVATE hft_core dl yaml-cpp)
 
 # 2.2 编译插件 B-Leaf: Grid Strategy (Leaf)
 add_library(strat_grid SHARED modules/strategy/grid_strategy.cpp)
@@ -135,10 +156,51 @@ add_library(strat_imbalance SHARED modules/strategy/imbalance_node.cpp)
 target_include_directories(strat_imbalance PRIVATE include)
 target_link_libraries(strat_imbalance PRIVATE hft_core)
 
+# 2.7 编译插件 B-Factor: Factor DAG Module
+add_library(mod_factor_dag SHARED modules/factor/factor_dag_module.cpp)
+target_include_directories(mod_factor_dag PRIVATE include core/include)
+target_link_libraries(mod_factor_dag PRIVATE hft_core dl yaml-cpp)
+
+# 2.8 编译插件 B-FactorNode: Last Price
+add_library(factor_last_price SHARED modules/factor/last_price_factor.cpp)
+target_include_directories(factor_last_price PRIVATE include core/include)
+target_link_libraries(factor_last_price PRIVATE hft_core)
+
+# 2.9 编译插件 B-FactorNode: SMA
+add_library(factor_sma SHARED modules/factor/sma_factor.cpp)
+target_include_directories(factor_sma PRIVATE include core/include)
+target_link_libraries(factor_sma PRIVATE hft_core)
+
+# 2.10 编译插件 B-FactorNode: Spread
+add_library(factor_spread SHARED modules/factor/spread_factor.cpp)
+target_include_directories(factor_spread PRIVATE include core/include)
+target_link_libraries(factor_spread PRIVATE hft_core)
+
+# 2.11 编译插件 B-FactorNode: Imbalance
+add_library(factor_imbalance SHARED modules/factor/imbalance_factor.cpp)
+target_include_directories(factor_imbalance PRIVATE include core/include)
+target_link_libraries(factor_imbalance PRIVATE hft_core)
+
+# 2.12 编译插件 B-FactorNode: Volatility
+add_library(factor_volatility SHARED modules/factor/volatility_factor.cpp)
+target_include_directories(factor_volatility PRIVATE include core/include)
+target_link_libraries(factor_volatility PRIVATE hft_core)
+
+# 2.13 编译插件 B-FactorNode: Combiner
+add_library(factor_combiner SHARED modules/factor/combiner_factor.cpp)
+target_include_directories(factor_combiner PRIVATE include core/include)
+target_link_libraries(factor_combiner PRIVATE hft_core yaml-cpp)
+
 # 3. 编译插件 C: SimpleTrade
 add_library(mod_trade SHARED modules/trade/simple_trade.cpp)
 target_include_directories(mod_trade PRIVATE include)
 target_link_libraries(mod_trade PRIVATE hft_core)
+
+# 3.1 编译插件 C-CCAPI: Binance USDT Futures Trade
+add_library(mod_ccapi_binance_usds_trade SHARED modules/trade/ccapi_binance_usds_trade.cpp)
+target_include_directories(mod_ccapi_binance_usds_trade PRIVATE include core/include ${ccapi_SOURCE_DIR}/include ${RAPIDJSON_INCLUDE_DIR})
+target_link_libraries(mod_ccapi_binance_usds_trade PRIVATE hft_core Boost::system OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
+target_compile_definitions(mod_ccapi_binance_usds_trade PRIVATE CCAPI_ENABLE_SERVICE_EXECUTION_MANAGEMENT CCAPI_ENABLE_EXCHANGE_BINANCE_USDS_FUTURES)
 
 # 4. 编译插件 D: Risk Control
 add_library(mod_risk SHARED modules/risk/risk_module.cpp)
@@ -159,6 +221,16 @@ target_link_libraries(mod_order PRIVATE hft_core)
 add_library(mod_monitor SHARED modules/monitor/monitor_module.cpp)
 target_include_directories(mod_monitor PRIVATE include)
 target_link_libraries(mod_monitor PRIVATE hft_core ixwebsocket nlohmann_json::nlohmann_json zmq -Wl,--no-as-needed pthread -Wl,--as-needed)
+
+# 6.1 编译插件 F-2: Signal CSV (EVENT_SIGNAL -> CSV)
+add_library(mod_signal_csv SHARED modules/monitor/signal_csv_module.cpp)
+target_include_directories(mod_signal_csv PRIVATE include)
+target_link_libraries(mod_signal_csv PRIVATE hft_core -Wl,--no-as-needed pthread -Wl,--as-needed)
+
+# 7. 编译插件 Test Harness (ZMQ 控制)
+add_library(mod_test_harness SHARED modules/test_harness/test_harness_module.cpp)
+target_include_directories(mod_test_harness PRIVATE include core/include)
+target_link_libraries(mod_test_harness PRIVATE hft_core nlohmann_json::nlohmann_json zmq -Wl,--no-as-needed pthread -Wl,--as-needed)
 
 # 8. 编译插件 G: Replay (DataFeed)
 add_library(mod_replay SHARED modules/replay/replay_module.cpp)

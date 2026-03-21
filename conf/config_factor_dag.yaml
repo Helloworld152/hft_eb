@@ -1,0 +1,77 @@
+trading_hours:
+  start: "09:00:00"
+  end: "23:00:00"
+
+plugins:
+  - name: Replay
+    library: "bin/libmod_replay.so"
+    enabled: true
+    config:
+      data_file: "data/market_data_20260320_night"
+
+  - name: FactorDAG
+    library: "bin/libmod_factor_dag.so"
+    enabled: true
+    config:
+      trigger:
+        on_tick: true
+        on_kline: false
+        on_timer: false
+        timer_interval_sec: 1
+      nodes:
+        - id: LAST_PRICE
+          library: "bin/libfactor_last_price.so"
+          params:
+            symbol: "rb2405"
+        - id: SMA_20
+          library: "bin/libfactor_sma.so"
+          params:
+            window: 20
+            symbol: "rb2405"
+        - id: SPREAD
+          library: "bin/libfactor_spread.so"
+          params:
+            symbol: "rb2405"
+        - id: IMBALANCE
+          library: "bin/libfactor_imbalance.so"
+          params:
+            symbol: "rb2405"
+        - id: VOL_20
+          library: "bin/libfactor_volatility.so"
+          params:
+            window: 20
+            symbol: "rb2405"
+        - id: COMBO
+          library: "bin/libfactor_combiner.so"
+          params:
+            weights: [0.25, 0.25, 0.25, 0.25]
+      edges:
+        - from: LAST_PRICE
+          to: SMA_20
+        - from: LAST_PRICE
+          to: VOL_20
+        - from: SMA_20
+          to: COMBO
+        - from: SPREAD
+          to: COMBO
+        - from: IMBALANCE
+          to: COMBO
+        - from: VOL_20
+          to: COMBO
+      outputs:
+        - node: SMA_20
+          factor_name: "SMA_20"
+        - node: SPREAD
+          factor_name: "SPREAD"
+        - node: IMBALANCE
+          factor_name: "IMBALANCE"
+        - node: VOL_20
+          factor_name: "VOL_20"
+        - node: COMBO
+          factor_name: "COMBO"
+
+  - name: SignalCsv
+    library: "bin/libmod_signal_csv.so"
+    enabled: true
+    config:
+      output_path: "log/signal.csv"

@@ -14,7 +14,7 @@ plugins:
     library: "bin/libmod_strategy_tree_parallel.so"
     enabled: true
     config:
-      parallel: false
+      parallel: true
       shard_by: "symbol"
       shard_count: 8
       queue_capacity: 8192

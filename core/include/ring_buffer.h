@@ -68,6 +68,13 @@ public:
           mask_(capacity_ - 1),
           buffer_(capacity_) {}
 
+    size_t capacity() const noexcept { return capacity_; }
+    size_t size() const noexcept {
+        const size_t head = head_.load(std::memory_order_relaxed);
+        const size_t tail = tail_.load(std::memory_order_acquire);
+        return tail - head;
+    }
+
     bool push(const T& item) {
         const size_t tail = tail_.load(std::memory_order_relaxed);
         const size_t head = head_.load(std::memory_order_acquire);

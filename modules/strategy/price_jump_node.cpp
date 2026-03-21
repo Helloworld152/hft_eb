@@ -2,6 +2,7 @@
 #include <iostream>
 #include <cstring>
 #include <cmath>
+#include <unordered_map>
 
 /**
  * PriceJumpNode: 计算因子节点
@@ -18,13 +19,14 @@ public:
     }
 
     void onTick(const TickRecord* tick) override {
-        static double last_price = 0;
-        if (last_price == 0) {
-            last_price = tick->last_price;
+        std::string key(tick->symbol);
+        auto it = last_price_by_symbol_.find(key);
+        if (it == last_price_by_symbol_.end()) {
+            last_price_by_symbol_.emplace(std::move(key), tick->last_price);
             return;
         }
 
-        double diff = tick->last_price - last_price;
+        double diff = tick->last_price - it->second;
         if (std::abs(diff) >= threshold_) {
             SignalRecord sig;
             strncpy(sig.symbol, tick->symbol, 31);
@@ -39,7 +41,7 @@ public:
             
             // 发出信号
             ctx_->send_signal(sig);
-            last_price = tick->last_price;
+            it->second = tick->last_price;
         }
     }
 
@@ -51,6 +53,7 @@ private:
     StrategyContext* ctx_;
     double threshold_ = 0.2;
     bool debug_ = false;
+    std::unordered_map<std::string, double> last_price_by_symbol_;
 };
 
 EXPORT_STRATEGY(PriceJumpNode)

@@ -1,10 +1,8 @@
 #include "../../include/framework.h"
 #include "../../core/include/ring_buffer.h"
 #include "../../core/include/symbol_manager.h"
-
 #include <dlfcn.h>
 #include <yaml-cpp/yaml.h>
-
 #include <atomic>
 #include <cstdint>
 #include <cstring>
@@ -157,13 +155,11 @@ public:
             auto* shard_ptr = shard.get();
             shard->worker = std::thread([this, shard_ptr]() { shard_loop(*shard_ptr); });
         }
-        signal_worker_ = std::thread([this]() { signal_loop(); });
     }
 
     void stop() override {
         if (!running_) return;
         running_ = false;
-        if (signal_worker_.joinable()) signal_worker_.join();
         for (auto& shard : shards_) {
             if (shard->worker.joinable()) shard->worker.join();
         }
@@ -188,11 +184,10 @@ private:
     };
 
     struct WorkItem {
-        enum class Type : uint8_t { Tick, Kline, Signal, OrderUpdate };
+        enum class Type : uint8_t { Tick, Kline, OrderUpdate };
         Type type;
         TickRecord tick;
         KlineRecord kline;
-        SignalRecord signal;
         OrderRtn order;
     };
 
@@ -204,9 +199,8 @@ private:
 
     struct ShardContext {
         explicit ShardContext(size_t queue_capacity)
-            : work_queue(queue_capacity), signal_queue(queue_capacity) {}
+            : work_queue(queue_capacity) {}
         SpscQueue<WorkItem> work_queue;   // Tick/Kline/OrderUpdate (single producer: event thread)
-        SpscQueue<WorkItem> signal_queue; // Signal (single producer: signal thread)
         std::vector<NodeInstance> nodes; // parallel nodes only
         std::thread worker;
     };
@@ -252,40 +246,25 @@ private:
         }
     }
 
-    void signal_loop() {
+    void drain_signals() {
         SignalRecord sig;
-        while (running_) {
-            if (!signal_queue_.pop(sig)) {
-                _mm_pause();
-                continue;
-            }
-
-            // 1) Send to parallel nodes (sharded by symbol)
-            if (!shards_.empty()) {
-                size_t shard = shard_for_symbol(sig.symbol);
-                WorkItem item;
-                item.type = WorkItem::Type::Signal;
-                item.signal = sig;
-                while (running_ && !shards_[shard]->signal_queue.push(item)) {
-                    _mm_pause();
-                }
-            }
-
-            // 2) Send to serial nodes immediately
+        size_t drained = 0;
+        while (drained < SIGNAL_DRAIN_BATCH && signal_queue_.pop(sig)) {
             for (auto& n : serial_nodes_) {
                 if (n.id == sig.source_id) continue;
                 n.node->onSignal(&sig);
             }
-
-            // 3) Optional publish to global bus
             if (publish_signals_) {
                 bus_->publish(EVENT_SIGNAL, &sig);
             }
+            ++drained;
         }
     }
 
+
     void on_tick(const TickRecord* tick) {
         if (!running_) return;
+        drain_signals();
         // Serial nodes first (single thread)
         for (auto& n : serial_nodes_) {
             n.node->onTick(tick);
@@ -340,13 +319,6 @@ private:
     void shard_loop(ShardContext& shard) {
         WorkItem item;
         while (running_) {
-            if (shard.signal_queue.pop(item)) {
-                for (auto& n : shard.nodes) {
-                    if (n.id == item.signal.source_id) continue;
-                    n.node->onSignal(&item.signal);
-                }
-                continue;
-            }
             if (shard.work_queue.pop(item)) {
                 switch (item.type) {
                     case WorkItem::Type::Tick:
@@ -363,9 +335,6 @@ private:
                         for (auto& n : shard.nodes) {
                             n.node->onOrderUpdate(&item.order);
                         }
-                        break;
-                    case WorkItem::Type::Signal:
-                        // Signals are handled in signal_queue.
                         break;
                 }
                 continue;
@@ -408,8 +377,8 @@ private:
     std::vector<std::unique_ptr<ShardContext>> shards_;
     std::vector<NodeInstance> serial_nodes_;
     std::vector<LibHandle> libs_;
-    std::thread signal_worker_;
 
+    static constexpr size_t SIGNAL_DRAIN_BATCH = 64;
     static constexpr size_t SIGNAL_QUEUE_CAP = 65536;
     MPMCRingBuffer<SignalRecord, SIGNAL_QUEUE_CAP> signal_queue_;
 };
