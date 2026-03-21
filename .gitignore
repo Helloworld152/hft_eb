@@ -9,3 +9,4 @@ target/
 nohup.out
 
 *.lock
+.worktrees/
