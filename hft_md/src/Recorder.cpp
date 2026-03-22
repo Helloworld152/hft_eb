@@ -1,16 +1,37 @@
 #include "Recorder.h"
-
 #include "mmap_util.h"
 #include "symbol_manager.h"
-
 #include <yaml-cpp/yaml.h>
-
 #include <chrono>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
 
 namespace fs = std::filesystem;
+
+namespace {
+constexpr uint32_t kDayStart = 90000;
+constexpr uint32_t kDayEnd = 151500;
+constexpr uint32_t kNightStart = 210000;
+constexpr uint32_t kNightEnd = 23000;
+
+bool is_in_market_time(uint32_t hhmmss) {
+    if (hhmmss >= kDayStart && hhmmss <= kDayEnd) {
+        return true;
+    }
+    return hhmmss >= kNightStart || hhmmss <= kNightEnd;
+}
+
+bool is_valid_price(double price) {
+    return price > 1e-6 && price < 1e300;
+}
+
+void assign_valid_price(double src, double& dst) {
+    if (is_valid_price(src)) {
+        dst = src;
+    }
+}
+} // namespace
 
 struct TickRecorder::WriterContext {
     std::unique_ptr<MmapWriter<TickRecord>> writer;
@@ -129,6 +150,20 @@ void TickRecorder::OnRtnDepthMarketData(CThostFtdcDepthMarketDataField* pData) {
     TickRecord rec;
     memset(&rec, 0, sizeof(TickRecord));
 
+    int hh = 0;
+    int mm = 0;
+    int ss = 0;
+    if (sscanf(pData->UpdateTime, "%d:%d:%d", &hh, &mm, &ss) == 3) {
+        uint32_t update_hhmmss = static_cast<uint32_t>(hh * 10000 + mm * 100 + ss);
+        if (!is_in_market_time(update_hhmmss)) {
+            return;
+        }
+        rec.update_time =
+            (static_cast<uint64_t>(hh) * 10000 + mm * 100 + ss) * 1000 + pData->UpdateMillisec;
+    } else {
+        return;
+    }
+
     strncpy(rec.symbol, pData->InstrumentID, sizeof(rec.symbol) - 1);
     rec.symbol_id = SymbolManager::instance().get_id(rec.symbol);
 
@@ -138,47 +173,39 @@ void TickRecorder::OnRtnDepthMarketData(CThostFtdcDepthMarketDataField* pData) {
         rec.trading_day = trading_day_int_;
     }
 
-    rec.last_price = pData->LastPrice;
+    assign_valid_price(pData->LastPrice, rec.last_price);
     rec.volume = pData->Volume;
     rec.turnover = pData->Turnover;
     rec.open_interest = pData->OpenInterest;
 
-    rec.upper_limit = pData->UpperLimitPrice;
-    rec.lower_limit = pData->LowerLimitPrice;
-    rec.open_price = pData->OpenPrice;
-    rec.highest_price = pData->HighestPrice;
-    rec.lowest_price = pData->LowestPrice;
-    rec.pre_close_price = pData->PreClosePrice;
+    assign_valid_price(pData->UpperLimitPrice, rec.upper_limit);
+    assign_valid_price(pData->LowerLimitPrice, rec.lower_limit);
+    assign_valid_price(pData->OpenPrice, rec.open_price);
+    assign_valid_price(pData->HighestPrice, rec.highest_price);
+    assign_valid_price(pData->LowestPrice, rec.lowest_price);
+    assign_valid_price(pData->PreClosePrice, rec.pre_close_price);
 
-    rec.bid_price[0] = pData->BidPrice1;
+    assign_valid_price(pData->BidPrice1, rec.bid_price[0]);
     rec.bid_volume[0] = pData->BidVolume1;
-    rec.bid_price[1] = pData->BidPrice2;
+    assign_valid_price(pData->BidPrice2, rec.bid_price[1]);
     rec.bid_volume[1] = pData->BidVolume2;
-    rec.bid_price[2] = pData->BidPrice3;
+    assign_valid_price(pData->BidPrice3, rec.bid_price[2]);
     rec.bid_volume[2] = pData->BidVolume3;
-    rec.bid_price[3] = pData->BidPrice4;
+    assign_valid_price(pData->BidPrice4, rec.bid_price[3]);
     rec.bid_volume[3] = pData->BidVolume4;
-    rec.bid_price[4] = pData->BidPrice5;
+    assign_valid_price(pData->BidPrice5, rec.bid_price[4]);
     rec.bid_volume[4] = pData->BidVolume5;
 
-    rec.ask_price[0] = pData->AskPrice1;
+    assign_valid_price(pData->AskPrice1, rec.ask_price[0]);
     rec.ask_volume[0] = pData->AskVolume1;
-    rec.ask_price[1] = pData->AskPrice2;
+    assign_valid_price(pData->AskPrice2, rec.ask_price[1]);
     rec.ask_volume[1] = pData->AskVolume2;
-    rec.ask_price[2] = pData->AskPrice3;
+    assign_valid_price(pData->AskPrice3, rec.ask_price[2]);
     rec.ask_volume[2] = pData->AskVolume3;
-    rec.ask_price[3] = pData->AskPrice4;
+    assign_valid_price(pData->AskPrice4, rec.ask_price[3]);
     rec.ask_volume[3] = pData->AskVolume4;
-    rec.ask_price[4] = pData->AskPrice5;
+    assign_valid_price(pData->AskPrice5, rec.ask_price[4]);
     rec.ask_volume[4] = pData->AskVolume5;
-
-    int hh = 0;
-    int mm = 0;
-    int ss = 0;
-    if (sscanf(pData->UpdateTime, "%d:%d:%d", &hh, &mm, &ss) == 3) {
-        rec.update_time =
-            (static_cast<uint64_t>(hh) * 10000 + mm * 100 + ss) * 1000 + pData->UpdateMillisec;
-    }
 
     if (use_shm_) {
         MarketSnapshot::instance().update(rec);
