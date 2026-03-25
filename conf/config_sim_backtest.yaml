@@ -1,0 +1,59 @@
+# 模拟成交回测：Replay + Simple_Strategy + Risk + Order + Position + Account + SimTrade
+# 运行：./bin/hft_engine conf/config_sim_backtest.yaml
+
+symbols_file: ../conf/symbols.txt
+
+snapshot:
+  type: local
+
+plugins:
+  - name: Replay
+    library: libmod_replay.so
+    enabled: true
+    config:
+      data_file: data/market_data_20260319_night
+      debug: false
+
+  - name: Simple_Strategy
+    library: libmod_strategy.so
+    enabled: true
+    config:
+      symbol: au2606
+      buy_thresh: "1048"
+      sell_thresh: "1050"
+
+  - name: Risk
+    library: libmod_risk.so
+    enabled: true
+    config:
+      max_orders_per_second: 100
+
+  - name: Order_Manager
+    library: libmod_order.so
+    enabled: true
+    config:
+      node_id: 1
+      debug: true
+
+  - name: Position_Manager
+    library: libmod_position.so
+    enabled: true
+    config:
+      dump_path: data/pos_sim_backtest.json
+      query_interval: 3600
+
+  - name: Account_Manager
+    library: libmod_account.so
+    enabled: true
+    config:
+      dump_path: data/acc_sim_backtest.json
+      query_interval: 3600
+
+  - name: SimTrade
+    library: libmod_sim_trade.so
+    enabled: true
+    config:
+      debug: true
+      slippage_ticks: "0.01"
+      tick_size: "1"
+      initial_balance: "1000000"

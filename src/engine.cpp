@@ -123,6 +123,11 @@ HftEngine::~HftEngine() {
 
 bool HftEngine::loadConfig(const std::string& config_path) {
     std::cout << ">>> HFT Engine Booting using config: " << config_path << std::endl;
+
+    bus_->subscribe(EVENT_ENGINE_STOP, [](void*) {
+        std::cout << "[System] Received EVENT_ENGINE_STOP. Stopping..." << std::endl;
+        g_shutdown = true;
+    });
     
     // 显式加载核心库，并导出全局符号 (RTLD_GLOBAL)
     // 这一步至关重要，确保所有插件都能共享 Host 中的 SymbolManager 单例实例
@@ -207,7 +212,7 @@ bool HftEngine::loadConfig(const std::string& config_path) {
             std::cout << "[Loader] Loading Module: " << name << " (" << lib_path << ")..." << std::endl;
 
             // A. 加载动态库
-            void* handle = dlopen(lib_path.c_str(), RTLD_LAZY);
+            void* handle = dlopen(lib_path.c_str(), RTLD_LOCAL | RTLD_NOW);
             if (!handle) {
                 std::cerr << "   [ERROR] dlopen failed: " << dlerror() << std::endl;
                 continue;

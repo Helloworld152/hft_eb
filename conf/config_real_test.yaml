@@ -64,3 +64,10 @@ plugins:
       dump_path: "../data/pos_real.json"
       query_interval: 15 # 主动查询间隔(秒)
 
+  - name: Account_Manager
+    library: "../bin/libmod_account.so"
+    enabled: true
+    config:
+      dump_path: "../data/acc_real.json"
+      query_interval: 15
+

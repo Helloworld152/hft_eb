@@ -1,0 +1,63 @@
+# Python 策略回测示例
+# 运行：./bin/hft_engine conf/config_py_backtest.yaml
+
+symbols_file: ../conf/symbols.txt
+
+snapshot:
+  type: local
+
+plugins:
+  - name: Replay
+    library: libmod_replay.so
+    enabled: true
+    config:
+      data_file: data/market_data_20260319_night
+      debug: false
+      idle_stop_sec: 5
+
+  - name: PyStrategy
+    library: libmod_py_strategy.so
+    enabled: true
+    config:
+      py_module: py_tools.strategies.sample_strategy
+      py_class: SampleStrategy
+      py_path: .
+      symbol_filter: au2606
+      sample_every: "1"
+      error_policy: disable
+
+  - name: Risk
+    library: libmod_risk.so
+    enabled: true
+    config:
+      max_orders_per_second: 100
+
+  - name: Order_Manager
+    library: libmod_order.so
+    enabled: true
+    config:
+      node_id: 1
+      debug: true
+
+  - name: Position_Manager
+    library: libmod_position.so
+    enabled: true
+    config:
+      dump_path: data/pos_py_backtest.json
+      query_interval: 3600
+
+  - name: Account_Manager
+    library: libmod_account.so
+    enabled: true
+    config:
+      dump_path: data/acc_py_backtest.json
+      query_interval: 3600
+
+  - name: SimTrade
+    library: libmod_sim_trade.so
+    enabled: true
+    config:
+      debug: true
+      slippage_ticks: "0.01"
+      tick_size: "1"
+      initial_balance: "1000000"

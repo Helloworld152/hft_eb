@@ -10,3 +10,5 @@ nohup.out
 
 *.lock
 .worktrees/
+
+__pycache__/

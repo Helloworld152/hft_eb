@@ -34,6 +34,7 @@ enum EventType {
     EVENT_CONN_STATUS,     // 连接状态更新
     EVENT_LOG,             // 日志
     EVENT_CACHE_RESET,     // 缓存重置信号 (由登录后的柜台确认触发)
+    EVENT_ENGINE_STOP,     // 引擎停止请求 (回测/批处理)
     MAX_EVENTS
 };
 

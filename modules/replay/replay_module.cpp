@@ -31,6 +31,10 @@ public:
             max_capacity_ = 0;  // 默认使用 meta 文件中的 capacity
         }
 
+        if (config.find("idle_stop_sec") != config.end()) {
+            idle_stop_sec_ = std::stoi(config.at("idle_stop_sec"));
+        }
+
         std::cout << "[Replay] 模块初始化完成。Mmap 基础路径: " << file_path_;
         if (max_capacity_ > 0) {
             std::cout << ", Max Capacity: " << max_capacity_ << " records (~" 
@@ -61,6 +65,7 @@ private:
 
                 auto start_t = std::chrono::high_resolution_clock::now();
                 bool perf_logged = false;
+                last_data_time_ = std::chrono::steady_clock::now();
                 
                 // 批量读取缓冲区（可选优化）
                 constexpr size_t BATCH_SIZE = 16;
@@ -80,7 +85,20 @@ private:
                             publish_tick(*batch_ptrs[i]);
                         }
                         perf_logged = false;
+                        last_data_time_ = std::chrono::steady_clock::now();
                     } else {
+                        if (idle_stop_sec_ > 0) {
+                            auto now = std::chrono::steady_clock::now();
+                            auto idle_sec = std::chrono::duration_cast<std::chrono::seconds>(now - last_data_time_).count();
+                            if (idle_sec >= idle_stop_sec_) {
+                                std::cout << "[Replay] Idle timeout reached (" << idle_stop_sec_
+                                          << "s). Stopping engine." << std::endl;
+                                bus_->publish(EVENT_ENGINE_STOP, nullptr);
+                                running_ = false;
+                                return;
+                            }
+                        }
+
                         if (debug_ &&tick_count_ > 0 && !perf_logged) {
                             auto end_t = std::chrono::high_resolution_clock::now();
                             auto cost_us = std::chrono::duration_cast<std::chrono::microseconds>(end_t - start_t).count();
@@ -127,6 +145,8 @@ private:
     bool debug_ = false;
     uint64_t tick_count_ = 0; // 计数器
     uint64_t max_capacity_ = 0; // 最大容量（0 表示使用 meta 文件中的 capacity）
+    int idle_stop_sec_ = 0; // 空闲超时停止（秒）
+    std::chrono::steady_clock::time_point last_data_time_;
 };
 
 EXPORT_MODULE(ReplayModule)

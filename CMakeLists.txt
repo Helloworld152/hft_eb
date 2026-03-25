@@ -85,6 +85,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 find_package(Threads REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(OpenSSL REQUIRED)
+find_package(Python3 COMPONENTS Development REQUIRED)
 find_path(RAPIDJSON_INCLUDE_DIR rapidjson/document.h)
 if (NOT RAPIDJSON_INCLUDE_DIR)
   message(FATAL_ERROR "RapidJSON headers not found. Please install rapidjson (include path should contain rapidjson/document.h).")
@@ -115,6 +116,10 @@ target_link_libraries(mod_ctp_real PRIVATE hft_core thostmduserapi_se thosttrade
 add_library(mod_strategy SHARED modules/strategy/simple_strategy.cpp)
 target_include_directories(mod_strategy PRIVATE include)
 target_link_libraries(mod_strategy PRIVATE hft_core)
+
+add_library(mod_py_strategy SHARED modules/py_strategy/py_strategy_module.cpp)
+target_include_directories(mod_py_strategy PRIVATE include core/include ${Python3_INCLUDE_DIRS})
+target_link_libraries(mod_py_strategy PRIVATE hft_core Python3::Python)
 
 # 2.1 编译插件 B-Tree: Strategy Tree Container
 add_library(mod_strategy_tree SHARED modules/strategy/strategy_tree_module.cpp)
