@@ -212,6 +212,11 @@ add_library(mod_risk SHARED modules/risk/risk_module.cpp)
 target_include_directories(mod_risk PRIVATE include)
 target_link_libraries(mod_risk PRIVATE hft_core -Wl,--no-as-needed pthread -Wl,--as-needed)
 
+# 4.1 编译插件 D-Portfolio: Portfolio Module
+add_library(mod_portfolio SHARED modules/portfolio/portfolio_module.cpp)
+target_include_directories(mod_portfolio PRIVATE include)
+target_link_libraries(mod_portfolio PRIVATE hft_core yaml-cpp)
+
 # 5. 编译插件 E: Position Manager
 add_library(mod_position SHARED modules/position/position_module.cpp)
 target_include_directories(mod_position PRIVATE include)
@@ -257,12 +262,6 @@ add_executable(hft_engine src/main.cpp src/engine.cpp)
 target_include_directories(hft_engine PRIVATE include)
 target_link_libraries(hft_engine PRIVATE hft_core dl pthread yaml-cpp)
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
-
-# 10. 编译工具: read_kline
-add_executable(read_kline tools/read_kline.cpp)
-target_include_directories(read_kline PRIVATE core/include)
-target_link_libraries(read_kline PRIVATE hft_core pthread)
-
 
 # ==========================================
 # External Dependencies

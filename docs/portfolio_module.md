@@ -123,7 +123,7 @@ else:
 
 建议配置字段:
 - `default_account`: 默认账户
-- `strategy_weights`: 策略权重表 (strategy_id -> weight)
+- `strategy_weights`: 策略权重表 (source_id -> weight)
 - `signal_scale`: 信号缩放系数
 - `min_signal_threshold`: 最小触发阈值
 - `max_abs_pos`: 最大净仓
@@ -131,9 +131,11 @@ else:
 - `max_notional`: 最大名义金额
 - `prefer_close_first`: 平仓优先
 - `signal_ttl_ms`: 信号有效期
+- `margin_rate`: 保证金比例 (用于账户约束计算)
 
 示例:
 ```yaml
+default_account: default
 strategy_weights:
   SMA: 1.0
   IMB: 0.7
@@ -144,6 +146,7 @@ max_order_size: 5
 max_notional: 200000
 prefer_close_first: true
 signal_ttl_ms: 2000
+margin_rate: 0.1
 ```
 
 ## 8. 运行时序与事件流
