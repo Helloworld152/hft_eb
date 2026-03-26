@@ -201,6 +201,11 @@ add_library(mod_trade SHARED modules/trade/simple_trade.cpp)
 target_include_directories(mod_trade PRIVATE include)
 target_link_libraries(mod_trade PRIVATE hft_core)
 
+# 3.0 编译插件 C-SimTrade: Simulated Exchange
+add_library(mod_sim_trade SHARED modules/trade/sim_trade_module.cpp)
+target_include_directories(mod_sim_trade PRIVATE include core/include)
+target_link_libraries(mod_sim_trade PRIVATE hft_core)
+
 # 3.1 编译插件 C-CCAPI: Binance USDT Futures Trade
 add_library(mod_ccapi_binance_usds_trade SHARED modules/trade/ccapi_binance_usds_trade.cpp)
 target_include_directories(mod_ccapi_binance_usds_trade PRIVATE include core/include ${ccapi_SOURCE_DIR}/include ${RAPIDJSON_INCLUDE_DIR})

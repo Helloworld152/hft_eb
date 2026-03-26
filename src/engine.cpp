@@ -375,14 +375,18 @@ void HftEngine::stop() {
             p->module->stop();
         }
     }
-    
-    // 2. [CRITICAL] 清空所有事件回调，防止指向已卸载的内存
+
+    // 2. [CRITICAL] 在 dlclose 之前销毁定时器回调：闭包代码在插件 .so 内，
+    //    若先 plugins_.clear() 再析构 timer_tasks_，会段错误。
+    timer_tasks_.clear();
+
+    // 3. [CRITICAL] 清空所有事件回调，防止指向已卸载的内存
     if (bus_) {
         std::cout << ">>> Clearing EventBus..." << std::endl;
         bus_->clear();
     }
 
-    // 3. [CRITICAL] 显式释放插件，确保按照预期顺序析构
+    // 4. [CRITICAL] 显式释放插件，确保按照预期顺序析构
     // PluginHandle 的析构函数会负责 dlclose
     plugins_.clear();
     
