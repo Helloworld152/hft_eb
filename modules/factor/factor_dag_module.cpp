@@ -18,6 +18,7 @@ struct FactorNodeHandle {
     bool dirty = true;
     double cached_value = 0.0;
     std::vector<FactorNodeHandle*> children;
+    std::vector<double> inputs_cache;
 
     ~FactorNodeHandle() {
         node.reset();
@@ -30,6 +31,11 @@ struct FactorNodeHandle {
 struct OutputSpec {
     FactorNodeHandle* node = nullptr;
     std::string factor_name;
+    bool has_symbol = false;
+    uint64_t symbol_id = 0;
+    char cached_symbol[32] = {0};
+    char cached_factor_name[32] = {0};
+    char cached_source_id[32] = {0};
 };
 
 class FactorDAGModule : public IModule {
@@ -57,14 +63,12 @@ public:
         parse_trigger(doc);
 
         if (trigger_on_tick_ || trigger_on_timer_) {
-            bus_->subscribe(EVENT_MARKET_DATA, [this](void* d) {
-                on_tick(static_cast<TickRecord*>(d));
-            });
+            bus_->subscribe(EVENT_MARKET_DATA,
+                            StaticDelegate<void(void*)>::bind<FactorDAGModule, &FactorDAGModule::on_tick_event>(this));
         }
         if (trigger_on_kline_ || trigger_on_timer_) {
-            bus_->subscribe(EVENT_KLINE, [this](void* d) {
-                on_kline(static_cast<KlineRecord*>(d));
-            });
+            bus_->subscribe(EVENT_KLINE,
+                            StaticDelegate<void(void*)>::bind<FactorDAGModule, &FactorDAGModule::on_kline_event>(this));
         }
         if (trigger_on_timer_) {
             if (timer_svc_) {
@@ -78,6 +82,13 @@ public:
     }
 
 private:
+    void on_tick_event(void* d) {
+        on_tick(static_cast<TickRecord*>(d));
+    }
+
+    void on_kline_event(void* d) {
+        on_kline(static_cast<KlineRecord*>(d));
+    }
     void parse_nodes(const YAML::Node& doc) {
         if (!doc["nodes"] || !doc["nodes"].IsSequence()) {
             std::cerr << "[FactorDAG] No nodes configured." << std::endl;
@@ -178,6 +189,16 @@ private:
             } else {
                 spec.factor_name = node_id;
             }
+            spec.has_symbol = spec.node->has_symbol;
+            spec.symbol_id = spec.node->symbol_id;
+            std::strncpy(spec.cached_source_id, spec.node->id.c_str(), sizeof(spec.cached_source_id) - 1);
+            std::strncpy(spec.cached_factor_name, spec.factor_name.c_str(), sizeof(spec.cached_factor_name) - 1);
+            if (spec.has_symbol && spec.symbol_id != 0) {
+                const char* sym = SymbolManager::instance().get_symbol(spec.symbol_id);
+                if (sym) {
+                    std::strncpy(spec.cached_symbol, sym, sizeof(spec.cached_symbol) - 1);
+                }
+            }
             outputs_.push_back(std::move(spec));
         }
     }
@@ -231,8 +252,11 @@ private:
         if (!node) return 0.0;
         if (!node->dirty) return node->cached_value;
 
-        std::vector<double> inputs;
-        inputs.reserve(node->children.size());
+        std::vector<double>& inputs = node->inputs_cache;
+        if (inputs.capacity() < node->children.size()) {
+            inputs.reserve(node->children.size());
+        }
+        inputs.clear();
         for (auto* child : node->children) {
             inputs.push_back(eval_node(child));
         }
@@ -281,18 +305,24 @@ private:
 
     void publish_signal(const OutputSpec& out, double value) {
         SignalRecord sig{};
-        std::strncpy(sig.source_id, out.node->id.c_str(), sizeof(sig.source_id) - 1);
-        std::strncpy(sig.factor_name, out.factor_name.c_str(), sizeof(sig.factor_name) - 1);
+        std::memcpy(sig.source_id, out.cached_source_id, sizeof(sig.source_id));
+        std::memcpy(sig.factor_name, out.cached_factor_name, sizeof(sig.factor_name));
         sig.value = value;
 
         const TickRecord* tick = get_tick_for_node(out.node);
         const KlineRecord* kline = get_kline_for_node(out.node);
-        if (tick) {
-            std::strncpy(sig.symbol, tick->symbol, sizeof(sig.symbol) - 1);
-            sig.timestamp = tick->update_time;
-        } else if (kline) {
-            std::strncpy(sig.symbol, kline->symbol, sizeof(sig.symbol) - 1);
-            sig.timestamp = kline->start_time;
+        if (out.has_symbol && out.cached_symbol[0] != '\0') {
+            std::memcpy(sig.symbol, out.cached_symbol, sizeof(sig.symbol));
+            if (tick) sig.timestamp = tick->update_time;
+            else if (kline) sig.timestamp = kline->start_time;
+        } else {
+            if (tick) {
+                std::strncpy(sig.symbol, tick->symbol, sizeof(sig.symbol) - 1);
+                sig.timestamp = tick->update_time;
+            } else if (kline) {
+                std::strncpy(sig.symbol, kline->symbol, sizeof(sig.symbol) - 1);
+                sig.timestamp = kline->start_time;
+            }
         }
 
         bus_->publish(EVENT_SIGNAL, &sig);

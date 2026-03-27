@@ -48,9 +48,8 @@ public:
 
         ring_ = std::make_unique<SpscQueue<SignalRow>>(capacity_);
 
-        bus_->subscribe(EVENT_SIGNAL, [this](void* d) {
-            this->on_signal(static_cast<SignalRecord*>(d));
-        });
+        bus_->subscribe(EVENT_SIGNAL,
+                        StaticDelegate<void(void*)>::bind<SignalCsvModule, &SignalCsvModule::on_signal_event>(this));
 
         std::cout << "[SignalCsv] Initialized. output=" << output_path_
                   << ", capacity=" << ring_->capacity()
@@ -69,6 +68,10 @@ public:
     }
 
 private:
+    void on_signal_event(void* d) {
+        on_signal(static_cast<SignalRecord*>(d));
+    }
+
     void on_signal(const SignalRecord* sig) {
         if (!sig) return;
         SignalRow row;
