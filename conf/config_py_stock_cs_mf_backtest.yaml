@@ -1,0 +1,75 @@
+# 日线截面多因子（100 只）：symbol_filter 为逗号分隔，不改 C++
+# 运行：./bin/hft_engine conf/config_py_stock_cs_mf_backtest.yaml
+# 最后一天 K 线若无「下一交易日」触发换日，可能不调仓（未改引擎 stop）。
+
+symbols_file: conf/symbols_a_share.txt
+
+snapshot:
+  type: local
+
+plugins:
+  - name: Kline_Parquet_Replay
+    library: libmod_kline_parquet_replay.so
+    enabled: true
+    config:
+      data_file: data/a_share_1d/daily_1d.pq
+      debug: false
+      sleep_ms_per_bar: 0
+      start_time_hhmmssmmm: "093000000"
+      stop_on_finish: true
+      use_close_x_volume: false
+
+  - name: PyStrategy
+    library: libmod_py_strategy.so
+    enabled: true
+    config:
+      py_module: py_tools.strategies.stock_cross_section_mf_strategy
+      py_class: StockCrossSectionMFStrategy
+      py_path: .
+      symbol_filter: "000001.SZ,000002.SZ,000004.SZ,000006.SZ,000007.SZ,000008.SZ,000009.SZ,000010.SZ,000011.SZ,000012.SZ,000014.SZ,000016.SZ,000017.SZ,000019.SZ,000020.SZ,000021.SZ,000025.SZ,000026.SZ,000027.SZ,000028.SZ,000029.SZ,000030.SZ,000031.SZ,000032.SZ,000034.SZ,000035.SZ,000036.SZ,000037.SZ,000039.SZ,000042.SZ,000045.SZ,000048.SZ,000049.SZ,000050.SZ,000055.SZ,000056.SZ,000058.SZ,000059.SZ,000060.SZ,000061.SZ,000062.SZ,000063.SZ,000065.SZ,000066.SZ,000068.SZ,000069.SZ,000070.SZ,000078.SZ,000088.SZ,000089.SZ,000090.SZ,000096.SZ,000099.SZ,000100.SZ,000151.SZ,000153.SZ,000155.SZ,000156.SZ,000157.SZ,000158.SZ,000159.SZ,000166.SZ,000301.SZ,000333.SZ,000338.SZ,000400.SZ,000401.SZ,000402.SZ,000403.SZ,000404.SZ,000407.SZ,000408.SZ,000409.SZ,000410.SZ,000411.SZ,000415.SZ,000417.SZ,000419.SZ,000420.SZ,000421.SZ,000422.SZ,000423.SZ,000425.SZ,000426.SZ,000428.SZ,000429.SZ,000430.SZ,000488.SZ,000498.SZ,000501.SZ,000503.SZ,000504.SZ,000505.SZ,000506.SZ,000507.SZ,000509.SZ,000510.SZ,000513.SZ,000514.SZ,000516.SZ"
+      sample_every: "1"
+      error_policy: disable
+      universe_file: conf/cross_section_universe_100.txt
+      window: "20"
+      w_mom: "0.6"
+      w_vol: "0.4"
+      n_long: "10"
+      min_names: "30"
+      order_volume: "1000"
+      daily_interval: "1440"
+
+  - name: Risk
+    library: libmod_risk.so
+    enabled: true
+    config:
+      max_orders_per_second: 10000000
+
+  - name: Order_Manager
+    library: libmod_order.so
+    enabled: true
+    config:
+      node_id: 1
+      debug: false
+
+  - name: Position_Manager
+    library: libmod_position.so
+    enabled: true
+    config:
+      dump_path: data/pos_py_stock_cs_mf_backtest.json
+      query_interval: 3600
+
+  - name: Account_Manager
+    library: libmod_account.so
+    enabled: true
+    config:
+      dump_path: data/acc_py_stock_cs_mf_backtest.json
+      query_interval: 3600
+
+  - name: SimTrade
+    library: libmod_sim_trade.so
+    enabled: true
+    config:
+      debug: true
+      slippage_ticks: "1"
+      tick_size: "0.01"
+      initial_balance: "50000000"

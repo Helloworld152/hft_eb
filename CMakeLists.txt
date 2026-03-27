@@ -86,6 +86,7 @@ find_package(Threads REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(OpenSSL REQUIRED)
 find_package(Python3 COMPONENTS Development REQUIRED)
+
 find_path(RAPIDJSON_INCLUDE_DIR rapidjson/document.h)
 if (NOT RAPIDJSON_INCLUDE_DIR)
   message(FATAL_ERROR "RapidJSON headers not found. Please install rapidjson (include path should contain rapidjson/document.h).")
@@ -247,10 +248,29 @@ add_library(mod_test_harness SHARED modules/test_harness/test_harness_module.cpp
 target_include_directories(mod_test_harness PRIVATE include core/include)
 target_link_libraries(mod_test_harness PRIVATE hft_core nlohmann_json::nlohmann_json zmq -Wl,--no-as-needed pthread -Wl,--as-needed)
 
+# 8.0 编译插件 G-Test: Event Sampler
+add_library(mod_event_sampler SHARED modules/test/event_sampler_module.cpp)
+target_include_directories(mod_event_sampler PRIVATE include core/include)
+target_link_libraries(mod_event_sampler PRIVATE hft_core nlohmann_json::nlohmann_json)
+
 # 8. 编译插件 G: Replay (DataFeed)
 add_library(mod_replay SHARED modules/replay/replay_module.cpp)
 target_include_directories(mod_replay PRIVATE include core/include)
 target_link_libraries(mod_replay PRIVATE hft_core yaml-cpp)
+
+
+# 8.1 编译插件 G-Kline: Parquet 日线回放 — 显式使用 /usr 下头文件与 .so，避免 ArrowConfig 指到 conda
+find_path(HFT_ARROW_INCLUDE NAMES arrow/api.h PATHS /usr/include NO_DEFAULT_PATH NO_CMAKE_PATH)
+find_library(HFT_LIBARROW NAMES arrow PATHS /usr/lib/x86_64-linux-gnu /usr/lib NO_DEFAULT_PATH NO_CMAKE_PATH)
+find_library(HFT_LIBPARQUET NAMES parquet PATHS /usr/lib/x86_64-linux-gnu /usr/lib NO_DEFAULT_PATH NO_CMAKE_PATH)
+if (HFT_ARROW_INCLUDE AND HFT_LIBARROW AND HFT_LIBPARQUET)
+    add_library(mod_kline_parquet_replay SHARED modules/kline/kline_parquet_replay_module.cpp)
+    target_include_directories(mod_kline_parquet_replay PRIVATE include core/include ${HFT_ARROW_INCLUDE})
+    target_link_libraries(mod_kline_parquet_replay PRIVATE hft_core ${HFT_LIBARROW} ${HFT_LIBPARQUET})
+    message(STATUS "mod_kline_parquet_replay: ${HFT_LIBARROW} ${HFT_LIBPARQUET}")
+else()
+    message(STATUS "System Arrow/Parquet under /usr not found; skipping mod_kline_parquet_replay")
+endif()
 
 # 9. 编译插件 H: Kline (K线合成)
 add_library(mod_kline SHARED modules/kline/kline_module.cpp)

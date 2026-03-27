@@ -79,13 +79,21 @@ public:
             this->on_tick(static_cast<TickRecord*>(d));
         });
 
+        if (py_on_kline_) {
+            bus_->subscribe(EVENT_KLINE, [this](void* d) {
+                this->on_kline(static_cast<KlineRecord*>(d));
+            });
+        }
+
         std::cout << "[PyStrategy] Initialized. module=" << py_module_
-                  << " class=" << py_class_ << std::endl;
+                  << " class=" << py_class_ << " on_tick=" << (py_on_tick_ ? "yes" : "no")
+                  << " on_kline=" << (py_on_kline_ ? "yes" : "no") << std::endl;
     }
 
     void stop() override {
         PyGILState_STATE gstate = PyGILState_Ensure();
         Py_XDECREF(py_on_tick_);
+        Py_XDECREF(py_on_kline_);
         Py_XDECREF(py_instance_);
         Py_XDECREF(py_send_order_);
         PyGILState_Release(gstate);
@@ -148,10 +156,17 @@ private:
         }
 
         PyObject* cls = PyObject_GetAttrString(module, py_class_.c_str());
-        Py_DECREF(module);
         if (!cls || !PyCallable_Check(cls)) {
             PyErr_Print();
             Py_XDECREF(cls);
+            Py_DECREF(module);
+            PyGILState_Release(gstate);
+            return false;
+        }
+        if (!PyType_Check(cls)) {
+            std::cerr << "[PyStrategy] py_class must be a class (type), not a plain function." << std::endl;
+            Py_DECREF(cls);
+            Py_DECREF(module);
             PyGILState_Release(gstate);
             return false;
         }
@@ -205,16 +220,31 @@ private:
         }
 
         Py_DECREF(config_dict);
-        Py_DECREF(cls);
 
+        PyErr_Clear();
         py_on_tick_ = PyObject_GetAttrString(py_instance_, "on_tick");
-        if (!py_on_tick_ || !PyCallable_Check(py_on_tick_)) {
-            Py_XDECREF(py_on_tick_);
+        if (py_on_tick_ && !PyCallable_Check(py_on_tick_)) {
+            Py_DECREF(py_on_tick_);
             py_on_tick_ = nullptr;
         }
+        PyErr_Clear();
+
+        py_on_kline_ = PyObject_GetAttrString(py_instance_, "on_kline");
+        if (py_on_kline_ && !PyCallable_Check(py_on_kline_)) {
+            Py_DECREF(py_on_kline_);
+            py_on_kline_ = nullptr;
+        }
+        PyErr_Clear();
+
+        Py_DECREF(cls);
+        Py_DECREF(module);
 
         PyGILState_Release(gstate);
-        return py_on_tick_ != nullptr;
+        if (py_on_tick_ == nullptr && py_on_kline_ == nullptr) {
+            std::cerr << "[PyStrategy] Strategy must define on_tick and/or on_kline." << std::endl;
+            return false;
+        }
+        return true;
     }
 
     void on_tick(TickRecord* tick) {
@@ -275,6 +305,44 @@ private:
         PyGILState_Release(gstate);
     }
 
+    void on_kline(KlineRecord* kline) {
+        if (!enabled_ || !py_on_kline_ || !kline) return;
+
+        if (!symbol_filter_.empty() && symbol_filter_.find(kline->symbol_id) == symbol_filter_.end()) {
+            return;
+        }
+
+        kline_count_++;
+        if ((kline_count_ % sample_every_) != 0) return;
+
+        PyGILState_STATE gstate = PyGILState_Ensure();
+
+        PyObject* d = PyDict_New();
+        dict_set_str(d, "symbol", kline->symbol);
+        dict_set_long(d, "symbol_id", static_cast<long long>(kline->symbol_id));
+        dict_set_long(d, "trading_day", kline->trading_day);
+        dict_set_long(d, "start_time", kline->start_time);
+        dict_set_double(d, "open", kline->open);
+        dict_set_double(d, "high", kline->high);
+        dict_set_double(d, "low", kline->low);
+        dict_set_double(d, "close", kline->close);
+        dict_set_long(d, "volume", kline->volume);
+        dict_set_double(d, "turnover", kline->turnover);
+        dict_set_double(d, "open_interest", kline->open_interest);
+        dict_set_long(d, "interval", static_cast<long long>(kline->interval));
+
+        PyObject* ret = PyObject_CallFunctionObjArgs(py_on_kline_, d, nullptr);
+        Py_DECREF(d);
+        Py_XDECREF(ret);
+
+        if (PyErr_Occurred()) {
+            PyErr_Print();
+            handle_error();
+        }
+
+        PyGILState_Release(gstate);
+    }
+
     void handle_error() {
         if (error_policy_ == "ignore") return;
         if (error_policy_ == "disable") {
@@ -296,6 +364,7 @@ private:
     EventBus* bus_ = nullptr;
     bool enabled_ = true;
     uint64_t tick_count_ = 0;
+    uint64_t kline_count_ = 0;
     int sample_every_ = 1;
     std::unordered_set<uint64_t> symbol_filter_;
 
@@ -307,6 +376,7 @@ private:
 
     PyObject* py_instance_ = nullptr;
     PyObject* py_on_tick_ = nullptr;
+    PyObject* py_on_kline_ = nullptr;
     PyObject* py_send_order_ = nullptr;
 };
 

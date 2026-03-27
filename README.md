@@ -124,6 +124,7 @@ cd bin
 
 ### 4. Parquet K 线回放 (可选依赖)
 ```bash
+python3 py_tools/gen_symbols_from_parquet.py data/a_share_1d/daily_1d.pq -o conf/symbols_a_share.txt
 cd bin
 ./hft_engine ../conf/config_test_kline_parquet_replay.yaml
 ```

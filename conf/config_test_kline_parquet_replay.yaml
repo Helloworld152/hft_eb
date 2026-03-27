@@ -1,0 +1,30 @@
+# A股日线 Parquet 回放
+# 运行：./bin/hft_engine conf/config_test_kline_parquet_replay.yaml
+
+symbols_file: /home/rying/hft_eb/conf/symbols_a_share.txt
+
+snapshot:
+  type: local
+
+plugins:
+  - name: Kline_Parquet_Replay
+    library: libmod_kline_parquet_replay.so
+    enabled: true
+    config:
+      data_file: data/a_share_1d/daily_1d.pq
+      debug: false
+      sleep_ms_per_bar: 0
+      start_time_hhmmssmmm: "093000000"
+      stop_on_finish: true
+      use_close_x_volume: false
+      # start_date: 20160328
+      # end_date: 20260326
+
+  - name: Event_Sampler
+    library: libmod_event_sampler.so
+    enabled: true
+    config:
+      events: EVENT_KLINE
+      head_n: "5"
+      sample_every: "10000"
+      max_print: "200"

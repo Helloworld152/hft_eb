@@ -1,0 +1,78 @@
+# A 股日线 pq 回放 + Python 多因子策略 + 模拟成交
+# 准备：日线 parquet（见 modules/kline/kline_parquet_replay_module.cpp 列要求）、
+#       python3 py_tools/gen_symbols_from_parquet.py <你的.pq> -o conf/symbols_a_share.txt
+# 运行（在仓库根目录）：./bin/hft_engine conf/config_py_stock_mf_backtest.yaml
+# 请将 data_file / symbol_filter 改成你环境里的路径与一只真实标的代码。
+
+symbols_file: conf/symbols_a_share.txt
+
+snapshot:
+  type: local
+
+plugins:
+  - name: Kline_Parquet_Replay
+    library: libmod_kline_parquet_replay.so
+    enabled: true
+    config:
+      data_file: data/a_share_1d/daily_1d.pq
+      debug: false
+      sleep_ms_per_bar: 0
+      start_time_hhmmssmmm: "093000000"
+      stop_on_finish: true
+      use_close_x_volume: false
+
+  - name: PyStrategy
+    library: libmod_py_strategy.so
+    enabled: true
+    config:
+      py_module: py_tools.strategies.stock_multi_factor_strategy
+      py_class: StockMultiFactorStrategy
+      py_path: .
+      # 只跑一只股票；与 symbols 一致。以下为 pq 内均振幅较高标的之一（688498.SH）
+      symbol_filter: "688498.SH"
+      sample_every: "1"
+      error_policy: disable
+      window: "20"
+      w_mom: "0.6"
+      w_vol: "0.4"
+      buy_thresh: "0.02"
+      sell_thresh: "-0.015"
+      order_volume: "1000"
+      daily_interval: "1440"
+
+  # 全速回放时墙钟 1 秒内会堆积大量报单，100 会误杀；回测可放宽或 enabled: false
+  - name: Risk
+    library: libmod_risk.so
+    enabled: true
+    config:
+      max_orders_per_second: 10000000
+
+  - name: Order_Manager
+    library: libmod_order.so
+    enabled: true
+    config:
+      node_id: 1
+      debug: false
+
+  - name: Position_Manager
+    library: libmod_position.so
+    enabled: true
+    config:
+      dump_path: data/pos_py_stock_mf_backtest.json
+      query_interval: 3600
+
+  - name: Account_Manager
+    library: libmod_account.so
+    enabled: true
+    config:
+      dump_path: data/acc_py_stock_mf_backtest.json
+      query_interval: 3600
+
+  - name: SimTrade
+    library: libmod_sim_trade.so
+    enabled: true
+    config:
+      debug: true
+      slippage_ticks: "1"
+      tick_size: "0.01"
+      initial_balance: "1000000"

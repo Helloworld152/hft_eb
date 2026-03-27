@@ -8,7 +8,7 @@
 - `ctp_real`：CTP 实盘交易网关（Trader API）。负责鉴权、登录、断线重连、报单/撤单、回报处理，并发布连接状态。
 - `factor`：因子计算模块（DAG）。解析 YAML 配置，动态加载因子节点并在 Tick/K线/定时器触发下计算输出信号。
 - `kline`：K 线聚合与落盘。基于 Tick 生成 1m K 线，并级联生成 1h/1d，写入 mmap 文件。
-- `kline`（`kline_parquet_replay_module.cpp`）：Parquet 日线回放，按批读取数据并发布 `EVENT_KLINE`。
+- `kline`（`modules/kline/kline_parquet_replay_module.cpp`）：Parquet 日线回放，按日期顺序读取数据并发布 `EVENT_KLINE`。
 - `monitor`：监控与转发。通过 ZMQ / WebSocket 对外发布行情、回报、持仓、资金等事件。
 - `monitor`（`signal_csv_module.cpp`）：信号落盘为 CSV，支持环形队列缓冲与批量刷盘。
 - `order`：订单管理与去重中心。生成本地订单 ID、拦截报单/撤单、处理原始回报并转发规范化事件。
