@@ -19,6 +19,12 @@ mkdir -p $BIN_DIR
 
 echo ">>> Starting Release Build..."
 
+# 链接时勿让 conda 的 -L 抢先（否则 libparquet 会链成 .so.1601）
+unset LD_LIBRARY_PATH
+unset LIBRARY_PATH
+unset PKG_CONFIG_PATH
+unset LDFLAGS
+
 # 进入 build 目录并执行 CMake
 cd $BUILD_DIR
 cmake -DCMAKE_BUILD_TYPE=Release ..
