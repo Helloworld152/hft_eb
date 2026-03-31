@@ -1,7 +1,7 @@
 #pragma once
 
 #include "protocol.h"
-#include "ring_buffer.h"
+#include "queue.h"
 #include "market_snapshot.h"
 #include "ThostFtdcMdApi.h"
 
@@ -52,7 +52,7 @@ private:
     std::unique_ptr<MarketSnapshot> shm_impl_;
 
     CThostFtdcMdApi* md_api_ = nullptr;
-    RingBuffer<TickRecord, 65536> rb_;
+    SpscQueue<TickRecord> rb_{65536};
     std::thread writer_thread_;
     std::atomic<bool> running_{false};
     uint32_t trading_day_int_ = 0;

@@ -1,6 +1,6 @@
 #include "../../include/framework.h"
 #include "../../core/include/symbol_manager.h" // For getting ID
-#include "ring_buffer.h"
+#include "../../core/include/queue.h"
 #include <thread>
 #include <atomic>
 #include <chrono>
@@ -97,32 +97,28 @@ public:
             MonitorEvent evt;
             evt.type = EVENT_MARKET_DATA;
             std::memcpy(&evt.data.md, d, sizeof(TickRecord));
-            std::lock_guard<std::mutex> lock(queue_mtx_);
-            queue_.push(evt);
+            queue_.push(std::move(evt));
         });
 
         bus_->subscribe(EVENT_RTN_ORDER, [this](void* d) {
             MonitorEvent evt;
             evt.type = EVENT_RTN_ORDER;
             std::memcpy(&evt.data.rtn, d, sizeof(OrderRtn));
-            std::lock_guard<std::mutex> lock(queue_mtx_);
-            queue_.push(evt); 
+            queue_.push(std::move(evt)); 
         });
 
         bus_->subscribe(EVENT_RTN_TRADE, [this](void* d) {
             MonitorEvent evt;
             evt.type = EVENT_RTN_TRADE;
             std::memcpy(&evt.data.trade, d, sizeof(TradeRtn));
-            std::lock_guard<std::mutex> lock(queue_mtx_);
-            queue_.push(evt);
+            queue_.push(std::move(evt));
         });
 
         bus_->subscribe(EVENT_ACC_UPDATE, [this](void* d) {
             MonitorEvent evt;
             evt.type = EVENT_ACC_UPDATE;
             std::memcpy(&(evt.data.acc), d, sizeof(AccountDetail));
-            std::lock_guard<std::mutex> lock(queue_mtx_);
-            queue_.push(evt);
+            queue_.push(std::move(evt));
         });
 
         bus_->subscribe(EVENT_POS_UPDATE, [this](void* d) {
@@ -139,8 +135,7 @@ public:
             MonitorEvent evt;
             evt.type = EVENT_POS_UPDATE;
             std::memcpy(&evt.data.pos, p, sizeof(PositionDetail));
-            std::lock_guard<std::mutex> lock(queue_mtx_);
-            queue_.push(evt);
+            queue_.push(std::move(evt));
         });
 
         bus_->subscribe(EVENT_CONN_STATUS, [this](void* d) {
@@ -153,8 +148,7 @@ public:
             MonitorEvent evt;
             evt.type = EVENT_CONN_STATUS;
             std::memcpy(&(evt.data.conn), d, sizeof(ConnectionStatus));
-            std::lock_guard<std::mutex> lock(queue_mtx_);
-            queue_.push(evt);
+            queue_.push(std::move(evt));
         });
     }
 
@@ -444,11 +438,10 @@ private:
     // Connection Status Cache: Key = AccountID_Source
     std::unordered_map<std::string, ConnectionStatus> conn_cache_;
     std::mutex pos_mtx_;
-    std::mutex queue_mtx_;
     std::atomic<bool> pos_dirty{false};
 
     // Internal queue for decoupling bus and network IO
-    RingBuffer<MonitorEvent, 4096> queue_;
+    MPSCQueue<MonitorEvent> queue_{4096};
     std::thread worker_;
     std::atomic<bool> running_{false};
 };

@@ -1,5 +1,5 @@
 #include "../../include/framework.h"
-#include "../../core/include/ring_buffer.h"
+#include "../../core/include/queue.h"
 #include "../../core/include/symbol_manager.h"
 #include <dlfcn.h>
 #include <yaml-cpp/yaml.h>
@@ -380,7 +380,7 @@ private:
 
     static constexpr size_t SIGNAL_DRAIN_BATCH = 64;
     static constexpr size_t SIGNAL_QUEUE_CAP = 65536;
-    MPMCRingBuffer<SignalRecord, SIGNAL_QUEUE_CAP> signal_queue_;
+    MPMCRingBuffer<SignalRecord> signal_queue_{SIGNAL_QUEUE_CAP};
 };
 
 EXPORT_MODULE(ParallelStrategyTreeModule)
