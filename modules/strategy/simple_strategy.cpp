@@ -1,4 +1,5 @@
 #include "../../include/framework.h"
+#include "../../core/include/core_state.h"
 #include "../../core/include/symbol_manager.h"
 #include <cstring>
 #include <iostream>
@@ -29,10 +30,6 @@ public:
             this->onTick(static_cast<TickRecord*>(d));
         });
 
-        // 订阅持仓更新
-        bus_->subscribe(EVENT_POS_UPDATE, [this](void* d) {
-            this->onPosUpdate(static_cast<PositionDetail*>(d));
-        });
     }
 
     void onTick(TickRecord* md) {
@@ -41,6 +38,12 @@ public:
 
         // 防止数据还未初始化就发单
         if (md->last_price <= 0.1) return;
+
+        PositionDetail current_pos_{};
+        const auto& core = core::CoreServicesRegistry::get();
+        if (core.position_store) {
+            core.position_store->get_position(default_account_.c_str(), target_id_, &current_pos_);
+        }
 
         // --- Buy Logic ---
         if (md->last_price < buy_thresh_) {
@@ -73,14 +76,10 @@ public:
         }
     }
 
-    void onPosUpdate(PositionDetail* pos) {
-        // 更新本地持仓缓存
-        current_pos_ = *pos;
-    }
-
     void sendOrder(const char* symbol, char dir, char offset, double price) {
         OrderReq req;
         req.symbol_id = target_id_;
+        std::strncpy(req.account_id, default_account_.c_str(), sizeof(req.account_id) - 1);
         strncpy(req.symbol, symbol, 31);
         req.direction = dir;
         req.offset_flag = offset; // 'O'pen, 'C'lose, 'T'oday
@@ -95,9 +94,7 @@ private:
     uint64_t target_id_;
     double buy_thresh_;
     double sell_thresh_;
-    
-    // 本地持仓缓存
-    PositionDetail current_pos_ = {0}; 
+    std::string default_account_ = "default";
 };
 
 EXPORT_MODULE(StrategyModule)

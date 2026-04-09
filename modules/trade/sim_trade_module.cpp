@@ -1,4 +1,5 @@
 #include "../../include/framework.h"
+#include "../../core/include/core_state.h"
 #include "../../core/include/symbol_manager.h"
 #include <atomic>
 #include <cstring>
@@ -68,12 +69,22 @@ private:
         OrderRtn order_rtn;
         std::memset(&order_rtn, 0, sizeof(order_rtn));
         fillOrderRtn(req, fill_price, &order_rtn);
-        bus_->publish(EVENT_RTN_RAW_ORDER, &order_rtn);
+        const auto& core = core::CoreServicesRegistry::get();
+        if (core.order_service) {
+            core.order_service->enqueue_order_rtn(order_rtn);
+        }
+        bus_->publish(EVENT_RTN_ORDER, &order_rtn);
 
         TradeRtn trade_rtn;
         std::memset(&trade_rtn, 0, sizeof(trade_rtn));
         fillTradeRtn(req, fill_price, &order_rtn, &trade_rtn);
-        bus_->publish(EVENT_RTN_RAW_TRADE, &trade_rtn);
+        if (core.order_service) {
+            core.order_service->enqueue_trade_rtn(trade_rtn);
+        }
+        if (core.position_service) {
+            core.position_service->enqueue_trade(trade_rtn);
+        }
+        bus_->publish(EVENT_RTN_TRADE, &trade_rtn);
 
         updateAccount(req, fill_price);
     }
@@ -91,7 +102,11 @@ private:
         std::strncpy(order_rtn.order_sys_id, req->order_sys_id, sizeof(order_rtn.order_sys_id) - 1);
         order_rtn.status = '0';
         std::strncpy(order_rtn.status_msg, "AlreadyFilled", sizeof(order_rtn.status_msg) - 1);
-        bus_->publish(EVENT_RTN_RAW_ORDER, &order_rtn);
+        const auto& core = core::CoreServicesRegistry::get();
+        if (core.order_service) {
+            core.order_service->enqueue_order_rtn(order_rtn);
+        }
+        bus_->publish(EVENT_RTN_ORDER, &order_rtn);
     }
 
     void fillOrderRtn(const OrderReq* req, double fill_price, OrderRtn* rtn) {
@@ -162,6 +177,10 @@ private:
         acc.margin = 0.0;
         acc.close_pnl = 0.0;
         acc.position_pnl = 0.0;
+        const auto& core = core::CoreServicesRegistry::get();
+        if (core.account_service) {
+            core.account_service->enqueue_account(acc);
+        }
         bus_->publish(EVENT_ACC_UPDATE, &acc);
     }
 

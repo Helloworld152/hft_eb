@@ -20,6 +20,10 @@
 ### 1. 实盘交易与持仓 (Trade & Position) - (进行中)
 - [x] **CTP 实盘插件 (ctp_real)**: 对接 CTP 柜台，支持报单、撤单及成交回报。
 - [x] **简单交易模拟 (trade)**: 用于离线测试的交易仿真模块。
+- [ ] **交易 gateway 进程化**:
+    - [ ] 主引擎与 gateway 通过双 SPSC 共享内存通信。
+    - [ ] `core` 统一生成 `client_id/order_ref` 并维护订单状态。
+    - [ ] gateway 重启后以柜台查询回补订单、持仓、资金状态。
 - [ ] **持仓账本 (Position Mgr)**: 
     - [x] 监听 `EVENT_RTN_TRADE`。
     - [x] 实时基础持仓计算（区分今仓、昨仓）。
@@ -71,3 +75,9 @@ graph TD
     PosMgr -->|POS_UPDATE| EventBus
     EventBus -->|POS_UPDATE| Strategy
 ```
+
+## 相关文档
+
+- 文档总导航：[docs/README.md](README.md)
+- 并发架构：[docs/并发架构设计_concurrency_design.md](并发架构设计_concurrency_design.md)
+- 交易 gateway 进程化方案：[docs/交易网关进程化设计_gateway_process.md](交易网关进程化设计_gateway_process.md)

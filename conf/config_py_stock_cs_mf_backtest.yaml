@@ -44,27 +44,6 @@ plugins:
     config:
       max_orders_per_second: 10000000
 
-  - name: Order_Manager
-    library: libmod_order.so
-    enabled: true
-    config:
-      node_id: 1
-      debug: false
-
-  - name: Position_Manager
-    library: libmod_position.so
-    enabled: true
-    config:
-      dump_path: data/pos_py_stock_cs_mf_backtest.json
-      query_interval: 3600
-
-  - name: Account_Manager
-    library: libmod_account.so
-    enabled: true
-    config:
-      dump_path: data/acc_py_stock_cs_mf_backtest.json
-      query_interval: 3600
-
   - name: SimTrade
     library: libmod_sim_trade.so
     enabled: true

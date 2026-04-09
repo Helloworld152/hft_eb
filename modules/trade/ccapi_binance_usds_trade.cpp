@@ -1,4 +1,5 @@
 #include "../../include/framework.h"
+#include "../../core/include/core_state.h"
 #include "../../core/include/symbol_manager.h"
 #include "ccapi_cpp/ccapi_macro.h"
 #include "ccapi_cpp/ccapi_session.h"
@@ -270,7 +271,11 @@ private:
                 std::strncpy(rtn.order_sys_id, order_id.c_str(), sizeof(rtn.order_sys_id) - 1);
             }
 
-            bus_->publish(EVENT_RTN_RAW_ORDER, &rtn);
+            const auto& core = core::CoreServicesRegistry::get();
+            if (core.order_service) {
+                core.order_service->enqueue_order_rtn(rtn);
+            }
+            bus_->publish(EVENT_RTN_ORDER, &rtn);
         }
     }
 
@@ -309,7 +314,14 @@ private:
                 std::strncpy(rtn.order_sys_id, order_id.c_str(), sizeof(rtn.order_sys_id) - 1);
             }
 
-            bus_->publish(EVENT_RTN_RAW_TRADE, &rtn);
+            const auto& core = core::CoreServicesRegistry::get();
+            if (core.order_service) {
+                core.order_service->enqueue_trade_rtn(rtn);
+            }
+            if (core.position_service) {
+                core.position_service->enqueue_trade(rtn);
+            }
+            bus_->publish(EVENT_RTN_TRADE, &rtn);
         }
     }
 
@@ -328,6 +340,10 @@ private:
             }
             acc.balance = to_double(el.getValue(CCAPI_EM_QUANTITY_TOTAL));
             acc.available = to_double(el.getValue(CCAPI_EM_QUANTITY_AVAILABLE_FOR_TRADING));
+            const auto& core = core::CoreServicesRegistry::get();
+            if (core.account_service) {
+                core.account_service->enqueue_account(acc);
+            }
             bus_->publish(EVENT_ACC_UPDATE, &acc);
         }
     }
@@ -370,7 +386,10 @@ private:
             }
 
             pos.net_pnl = to_double(el.getValue(CCAPI_EM_UNREALIZED_PNL));
-            bus_->publish(EVENT_RSP_POS, &pos);
+            const auto& core = core::CoreServicesRegistry::get();
+            if (core.position_service) {
+                core.position_service->enqueue_rsp_pos(pos);
+            }
         }
     }
 

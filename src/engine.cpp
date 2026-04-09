@@ -1,4 +1,5 @@
 #include "../include/engine.h"
+#include "../core/include/core_state.h"
 #include "../core/include/symbol_manager.h"
 #include "../core/include/market_snapshot.h"
 #include <dlfcn.h>
@@ -115,6 +116,17 @@ struct PluginHandle {
 HftEngine::HftEngine() : is_running_(false) {
     bus_ = std::make_unique<EventBusImpl>();
     timer_svc_ = std::make_unique<EngineTimerAdapter>(this);
+    position_service_ = std::make_unique<core::PositionService>();
+    order_service_ = std::make_unique<core::OrderService>();
+    account_service_ = std::make_unique<core::AccountService>();
+    core::CoreServicesRegistry::set(core::CoreServices{
+        position_service_.get(),
+        &position_service_->store(),
+        order_service_.get(),
+        &order_service_->store(),
+        account_service_.get(),
+        &account_service_->store(),
+    });
 }
 
 HftEngine::~HftEngine() {
@@ -257,9 +269,10 @@ bool HftEngine::loadConfig(const std::string& config_path) {
                 plugins_.push_back(plugin);
             } else {
                  std::cerr << "   [ERROR] create_module returned null!" << std::endl;
-                 dlclose(handle);
+                dlclose(handle);
             }
         }
+
     }
     return true;
 }
@@ -268,6 +281,9 @@ void HftEngine::start() {
     if (is_running_) return;
 
     std::cout << ">>> All Modules Loaded. Starting..." << std::endl;
+    position_service_->start();
+    order_service_->start();
+    account_service_->start();
     for (auto& p : plugins_) {
         if (p->module) {
             p->module->start();
@@ -287,6 +303,7 @@ void HftEngine::run() {
     std::cout << ">>> System Running. Waiting for signal or end time..." << std::endl;
 
     auto last_tick = std::chrono::steady_clock::now();
+    uint32_t idle_spins = 0;
 
     while (!g_shutdown) {
         auto now_clock = std::chrono::steady_clock::now();
@@ -295,6 +312,10 @@ void HftEngine::run() {
             last_tick += std::chrono::seconds(1);
             run_due_timers();
         }
+
+        // 主循环只负责发轮询驱动，具体抓取逻辑下沉到插件。
+        bus_->publish(EVENT_POLL_GATEWAY, nullptr);
+        bus_->publish(EVENT_POLL_REPLAY, nullptr);
 
         // --- 结束时间检查 ---
         if (!end_time_.empty()) {
@@ -309,9 +330,11 @@ void HftEngine::run() {
                  break;
              }
         }
-        
-        // 降低轮询频率，减少 CPU 占用，但保证秒级精度
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        __builtin_ia32_pause();
+        if ((++idle_spins & 0xFFu) == 0u) {
+            std::this_thread::yield();
+        }
     }
 
     stop();
@@ -389,6 +412,10 @@ void HftEngine::stop() {
     // 4. [CRITICAL] 显式释放插件，确保按照预期顺序析构
     // PluginHandle 的析构函数会负责 dlclose
     plugins_.clear();
+    account_service_->stop();
+    order_service_->stop();
+    position_service_->stop();
+    core::CoreServicesRegistry::clear();
     
     is_running_ = false;
     std::cout << ">>> Shutdown Complete." << std::endl;

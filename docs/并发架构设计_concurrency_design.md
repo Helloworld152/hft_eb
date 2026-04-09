@@ -5,6 +5,12 @@
 > **Date**: 2026-02-02
 > **Philosophy**: Decentralized Shared Memory, Pull-Based, Zero Copy.
 
+## 相关文档
+
+- 文档总导航：[docs/README.md](README.md)
+- 交易 gateway 进程化方案：[docs/交易网关进程化设计_gateway_process.md](交易网关进程化设计_gateway_process.md)
+- 订单状态与映射：[docs/订单管理设计_order_manager.md](订单管理设计_order_manager.md)
+
 ## 1. 核心理念：去中心化总线 (Decentralized Bus)
 
 放弃传统的“中央总线”模式，采用 **“每个人只管好自己的一亩三分地” (Publisher-Centric)** 的设计。

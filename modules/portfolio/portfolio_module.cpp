@@ -1,4 +1,5 @@
 #include "../../include/framework.h"
+#include "../../core/include/core_state.h"
 #include "../../core/include/symbol_manager.h"
 #include "../../core/include/market_snapshot.h"
 #include <yaml-cpp/yaml.h>
@@ -47,12 +48,6 @@ public:
 
         bus_->subscribe(EVENT_SIGNAL, [this](void* d) {
             this->onSignal(static_cast<SignalRecord*>(d));
-        });
-        bus_->subscribe(EVENT_POS_UPDATE, [this](void* d) {
-            this->onPosUpdate(static_cast<PositionDetail*>(d));
-        });
-        bus_->subscribe(EVENT_ACC_UPDATE, [this](void* d) {
-            this->onAccUpdate(static_cast<AccountDetail*>(d));
         });
     }
 
@@ -108,24 +103,6 @@ private:
         }
     }
 
-    void onAccUpdate(AccountDetail* acc) {
-        if (!acc || acc->account_id[0] == '\0') return;
-        std::lock_guard<std::mutex> lock(mtx_);
-        account_cache_[std::string(acc->account_id)] = *acc;
-    }
-
-    void onPosUpdate(PositionDetail* pos) {
-        if (!pos || pos->account_id[0] == '\0') return;
-        uint64_t symbol_id = pos->symbol_id;
-        if (symbol_id == 0) {
-            symbol_id = SymbolManager::instance().get_id(pos->symbol);
-        }
-        if (symbol_id == 0) return;
-
-        std::lock_guard<std::mutex> lock(mtx_);
-        position_cache_[std::string(pos->account_id)][symbol_id] = *pos;
-    }
-
     void onSignal(SignalRecord* sig) {
         if (!sig) return;
         uint64_t symbol_id = SymbolManager::instance().get_id(sig->symbol);
@@ -173,21 +150,12 @@ private:
         bool has_pos = false;
         AccountDetail acc{};
         bool has_acc = false;
-        {
-            std::lock_guard<std::mutex> lock(mtx_);
-            auto it_acc = account_cache_.find(default_account_);
-            if (it_acc != account_cache_.end()) {
-                acc = it_acc->second;
-                has_acc = true;
-            }
-            auto it_acc_pos = position_cache_.find(default_account_);
-            if (it_acc_pos != position_cache_.end()) {
-                auto it_pos = it_acc_pos->second.find(symbol_id);
-                if (it_pos != it_acc_pos->second.end()) {
-                    pos = it_pos->second;
-                    has_pos = true;
-                }
-            }
+        const auto& core = core::CoreServicesRegistry::get();
+        if (core.account_store) {
+            has_acc = core.account_store->get_account(default_account_.c_str(), &acc);
+        }
+        if (core.position_store) {
+            has_pos = core.position_store->get_position(default_account_.c_str(), symbol_id, &pos);
         }
 
         int long_total = has_pos ? (pos.long_td + pos.long_yd) : 0;
@@ -317,8 +285,6 @@ private:
 
     std::unordered_map<std::string, double> strategy_weights_;
     std::unordered_map<uint64_t, std::unordered_map<std::string, SignalState>> signal_cache_;
-    std::unordered_map<std::string, std::unordered_map<uint64_t, PositionDetail>> position_cache_;
-    std::unordered_map<std::string, AccountDetail> account_cache_;
     std::mutex mtx_;
 
     std::string default_account_ = "default";

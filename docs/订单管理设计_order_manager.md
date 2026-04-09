@@ -1,5 +1,11 @@
 # 订单管理模块 (Order Manager) 设计
 
+## 相关文档
+
+- 文档总导航：[docs/README.md](README.md)
+- 交易 gateway 进程化方案：[docs/交易网关进程化设计_gateway_process.md](交易网关进程化设计_gateway_process.md)
+- 持仓状态与 Core 化：[docs/持仓管理设计_position.md](持仓管理设计_position.md)
+
 ## 1. 核心目标
 - **唯一性**：跨进程、跨重启、跨交易日全局唯一。
 - **全生命周期追踪**：从 `OrderReq` 生成开始，覆盖内部风控、柜台、交易所及成交/撤单全路径。

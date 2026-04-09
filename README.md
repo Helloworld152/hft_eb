@@ -3,6 +3,11 @@
 ## 简介
 `hft_eb` 是一个基于事件驱动架构（Event-Driven Architecture）的高频交易系统核心引擎。目标是提供低延迟、高吞吐、可插拔的交易基础设施，并支持回测、回放、仿真与实盘接入。
 
+文档入口：
+- `docs/README.md`：设计文档总导航
+- `docs/modules_overview.md`：模块职责总览
+- `docs/plugins/README.md`：插件参数索引
+
 ## 核心设计哲学
 - **Zero Copy (零拷贝)**: 事件在总线上传递时仅传递指针，杜绝不必要的内存拷贝。
 - **Lock Free (无锁设计)**: 关键路径采用单线程同步调用，避免互斥锁竞争。
@@ -12,45 +17,88 @@
 
 ## 系统架构
 
-### 数据流拓扑
+### 架构总览
 ```mermaid
-graph TD
-    Engine[HftEngine]
-    EventBus{EventBus}
-    Recorder(hft_recorder)
-    DataFile[(Mmap File)]
-
-    subgraph Plugins
-        Replay[Replay Module]
-        Strategy[Strategy / Tree]
-        Risk[Risk Module]
-        Trade[Trade Module]
-        CTP_Trade[CTP Real Module]
-        PosMgr[Position Module]
-        Kline[Kline Module]
-        Monitor[Monitor Module]
+flowchart LR
+    subgraph Source["数据源 / 回放侧"]
+        Recorder["hft_md / hft_ba_md"]
+        Mmap[("Tick / Kline mmap data")]
+        Live["外部交易所 / 柜台 / 行情源"]
     end
 
-    Recorder -->|Write| DataFile
-    DataFile -->|Read| Replay
-    Replay -->|MARKET_DATA| EventBus
-    
-    EventBus -->|dispatch| Strategy
-    Strategy -->|ORDER_REQ| EventBus
-    EventBus -->|dispatch| Risk
-    Risk -->|ORDER_SEND| EventBus
-    EventBus -->|dispatch| CTP_Trade
-    CTP_Trade -->|RTN_TRADE| EventBus
-    EventBus -->|dispatch| PosMgr
-    EventBus -->|dispatch| Kline
-    EventBus -->|dispatch| Monitor
+    subgraph Engine["主引擎进程 hft_engine"]
+        EngineBoot["HftEngine<br/>配置加载 / 模块生命周期 / 定时器"]
+
+        Bus{"EventBus"}
+        Core["Core State<br/>order / position / account / snapshot"]
+
+        subgraph Research["研究 / 策略层模块"]
+            Replay["Replay / KlineReplay"]
+            Strategy["Strategy / StrategyTree / PyStrategy"]
+            Factor["Factor DAG"]
+            Portfolio["Portfolio (optional)"]
+        end
+
+        subgraph Execution["执行 / 观测层模块"]
+            Risk["Risk"]
+            Trade["SimTrade / GatewayPoll / CCAPI"]
+            Monitor["Monitor / SignalCsv / TestHarness"]
+        end
+    end
+
+    subgraph Gateway["可选独立交易网关进程 hft_trade_gateway"]
+        Runtime["Gateway Runtime / Adapter"]
+    end
+
+    subgraph IPC["跨进程 IPC"]
+        Cmd[("cmd_ring_gateway_id")]
+        Rtn[("rtn_ring_gateway_id")]
+    end
+
+    Recorder -->|写入| Mmap
+    Mmap -->|Replay 读取| Replay
+    Live -->|实盘接入 / 私有回报| Runtime
+
+    EngineBoot --> Bus
+    Replay -->|EVENT_MARKET_DATA / EVENT_KLINE| Bus
+    Bus --> Strategy
+    Bus --> Factor
+    Factor -->|EVENT_SIGNAL| Bus
+    Strategy -->|EVENT_SIGNAL / EVENT_ORDER_REQ| Bus
+    Bus --> Portfolio
+    Portfolio -->|EVENT_ORDER_REQ| Bus
+    Bus --> Risk
+    Risk -->|EVENT_ORDER_SEND| Bus
+    Bus --> Trade
+    Trade -->|EVENT_RTN_ORDER / EVENT_RTN_TRADE / EVENT_ACC_UPDATE| Bus
+    Bus --> Core
+    Bus --> Monitor
+    Core -->|共享状态 / 查询结果| Monitor
+
+    Trade -->|GatewayPoll 发命令| Cmd
+    Cmd --> Runtime
+    Runtime -->|OrderRtn / TradeRtn / Pos / Acc / Conn| Rtn
+    Rtn -->|GatewayPoll 轮询回灌| Trade
 ```
 
 ### 核心组件
-- **HftEngine**: 管理插件生命周期、定时器、运行时信号与退出。
-- **EventBus**: 同步事件分发，支持 `StaticDelegate` 和 `std::function` 兼容订阅。
-- **MarketSnapshot**: 预风控快照，支持 `local` 与 `shm` 两种后端。
-- **Plugins (模块)**: 通过配置加载 `.so` 动态库，构建完整交易链路。
+- **HftEngine**: 负责配置加载、插件生命周期、定时器、信号退出与主循环。
+- **EventBus**: 同步事件分发总线，事件类型定义见 `include/framework.h`。
+- **Core State**: 订单、持仓、账户等共享状态服务，位于 `core/`。
+- **MarketSnapshot**: 最新行情快照，支持 `local` 与 `shm` 两种后端。
+- **Plugins (模块)**: 通过 YAML 配置动态加载 `.so`，按顺序组成研究、回测、仿真和交易链路。
+
+读图建议：
+- 左侧是数据进入系统的两条路：`hft_md` 写 mmap 供 `Replay` 回放，或外部柜台直接接入独立 `trade_gateway`。
+- 中间是 `hft_engine` 主进程：行情经 `EventBus` 分发到策略/因子，再经过 `Portfolio`、`Risk`、`Trade` 形成完整执行链路。
+- 右侧是可选的独立交易网关：只有使用 `GatewayPoll` 时才会经过共享内存 ring，与主进程形成进程隔离。
+
+### 常见链路
+
+1. Tick 回放 / 行情接入：`hft_md -> mmap -> Replay -> EventBus`
+2. 信号生成：`StrategyTree / Factor DAG / PyStrategy -> EVENT_SIGNAL`
+3. 下单链路：`Portfolio(可选) -> Risk -> Trade`
+4. 状态与观测：`Trade 回报 -> Core State -> Monitor / SignalCsv`
 
 ## 目录结构
 ```
@@ -67,6 +115,7 @@ hft_eb/
 ├── py_tools/                # Python 工具
 ├── rust_tools/              # Rust 工具
 ├── src/                     # 引擎源码
+├── trade_gateway/           # 独立交易 gateway 进程子系统
 ├── tests/                   # 测试与用例
 ├── third_party/             # 第三方依赖 (CTP)
 └── build_release.sh         # 构建脚本
@@ -102,6 +151,7 @@ hft_eb/
 
 编译完成后输出：
 - `bin/hft_engine`
+- `bin/hft_trade_gateway`
 - `bin/lib*.so`
 
 ## 快速开始
@@ -132,6 +182,11 @@ cd bin
 ### 5. 实盘/仿真实盘 (需配置 CTP 账号与库路径)
 ```bash
 ./run.sh
+```
+
+### 6. 独立交易 Gateway 骨架
+```bash
+./bin/hft_trade_gateway --config conf/trade_gateway_demo.yaml
 ```
 
 注意事项：
@@ -187,7 +242,9 @@ plugins:
 ```
 
 插件顺序建议：
-- 风控模块应在 `Order_Manager` 之前注册，以便先限频再发单。
+- 典型顺序是 `Replay/行情 -> Strategy/Factor -> Portfolio(可选) -> Risk -> Trade -> Monitor`。
+- `Portfolio` 只在“信号先聚合再下单”的场景启用；若策略直接发 `EVENT_ORDER_REQ`，可跳过它。
+- `GatewayPoll` 适合与独立 `trade_gateway` 进程配对使用；纯回测通常使用 `SimTrade`。
 
 ## 插件清单 (编译产物)
 
@@ -200,24 +257,23 @@ plugins:
 交易与执行：
 - `libmod_trade.so`
 - `libmod_sim_trade.so`
-- `libmod_ctp_real.so`
+- `libmod_gateway_poll.so`
 - `libmod_ccapi_binance_usds_trade.so`
 - `libmod_sweep_trader.so`
 
 风控与管理：
 - `libmod_risk.so`
-- `libmod_order.so`
-- `libmod_position.so`
-- `libmod_account.so`
 
 监控与测试：
 - `libmod_monitor.so`
 - `libmod_signal_csv.so`
 - `libmod_test_harness.so`
-- `libmod_plugin_event_tap.so`
+- `libmod_event_sampler.so`
 
 策略与策略树：
 - `libmod_strategy.so`
+- `libmod_t0_rb_strategy.so`
+- `libmod_py_strategy.so`
 - `libmod_strategy_tree.so`
 - `libmod_strategy_tree_parallel.so`
 - `libstrat_grid.so`
@@ -235,6 +291,14 @@ plugins:
 - `libfactor_imbalance.so`
 - `libfactor_volatility.so`
 - `libfactor_combiner.so`
+- `libfactor_mid_return_500ms.so`
+- `libfactor_weighted_mid_return_500ms.so`
+- `libfactor_quote_intensity_500ms.so`
+- `libfactor_trade_pressure_500ms.so`
+
+组合与执行桥接：
+- `libmod_portfolio.so`
+- `libmod_gateway_poll.so`
 
 核心库：
 - `libhft_core.so`

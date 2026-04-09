@@ -1,5 +1,11 @@
 # 持仓管理系统设计文档 (Position Management System)
 
+## 相关文档
+
+- 文档总导航：[docs/README.md](README.md)
+- 订单状态与映射：[docs/订单管理设计_order_manager.md](订单管理设计_order_manager.md)
+- 交易 gateway 进程化方案：[docs/交易网关进程化设计_gateway_process.md](交易网关进程化设计_gateway_process.md)
+
 ## 1. 核心概念
 持仓模块 (PositionModule) 是无状态策略系统的状态容器。它的核心任务是通过监听总线上的“成交”事件来实时计算当前的持仓状态，并为策略提供“我可以卖/平多少手”的准确信息。
 

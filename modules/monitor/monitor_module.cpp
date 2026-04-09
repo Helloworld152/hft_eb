@@ -1,4 +1,5 @@
 #include "../../include/framework.h"
+#include "../../core/include/core_state.h"
 #include "../../core/include/symbol_manager.h" // For getting ID
 #include "../../core/include/queue.h"
 #include <thread>
@@ -84,7 +85,9 @@ public:
                             this->handleClientMessage(msg->str);
                         } else if (msg->type == ix::WebSocketMessageType::Open) {
                             if (debug_) std::cout << "[Monitor] WS 客户端已连接，发送快照..." << std::endl;
+                            this->requestSnapshots();
                             this->sendPositionSnapshot(webSocket);
+                            this->sendAccountSnapshot(webSocket);
                             this->sendConnectionSnapshot(webSocket);
                         }
                     }
@@ -121,23 +124,6 @@ public:
             queue_.push(std::move(evt));
         });
 
-        bus_->subscribe(EVENT_POS_UPDATE, [this](void* d) {
-            PositionDetail* p = static_cast<PositionDetail*>(d);
-            {
-                std::lock_guard<std::mutex> lock(pos_mtx_);
-                std::string acc_id = p->account_id;
-                if (acc_id.empty()) acc_id = "default";
-                
-                // PositionModule 已经完成了多空合并，这里直接覆盖即可
-                pos_cache_[acc_id][p->symbol_id] = *p;
-            }
-
-            MonitorEvent evt;
-            evt.type = EVENT_POS_UPDATE;
-            std::memcpy(&evt.data.pos, p, sizeof(PositionDetail));
-            queue_.push(std::move(evt));
-        });
-
         bus_->subscribe(EVENT_CONN_STATUS, [this](void* d) {
             ConnectionStatus* cs = static_cast<ConnectionStatus*>(d);
             {
@@ -155,7 +141,7 @@ public:
     void start() override {
         running_ = true;
 
-        // 持仓/资金由 Position 模块定时向 CTP 查询并推送，Monitor 只消费 EVENT_POS_UPDATE / EVENT_ACC_UPDATE
+        // 持仓快照直接读取 Core PositionStore；订单/资金增量仍消费总线事件
 
         worker_ = std::thread(&MonitorModule::io_loop, this);
 
@@ -176,10 +162,23 @@ public:
     }
 
 private:
+    void requestSnapshots() {
+        if (!bus_) return;
+        bus_->publish(EVENT_QRY_POS, nullptr);
+        bus_->publish(EVENT_QRY_ACC, nullptr);
+    }
+
     void sendPositionSnapshot(std::shared_ptr<ix::WebSocket> client) {
         std::string json_str = buildSnapshotJson();
         if (json_str.empty()) return;
         if (debug_) std::cout << "[Monitor] 发送持仓快照给新客户端: " << json_str << std::endl;
+        client->send(json_str);
+    }
+
+    void sendAccountSnapshot(std::shared_ptr<ix::WebSocket> client) {
+        std::string json_str = buildAccountSnapshotJson();
+        if (json_str.empty()) return;
+        if (debug_) std::cout << "[Monitor] 发送资金快照给新客户端: " << json_str << std::endl;
         client->send(json_str);
     }
 
@@ -203,35 +202,62 @@ private:
     }
 
     std::string buildSnapshotJson() {
-        std::lock_guard<std::mutex> lock(pos_mtx_);
-        if (pos_cache_.empty()) return "";
+        const auto& core = core::CoreServicesRegistry::get();
+        if (!core.position_store) return "";
+        std::vector<PositionDetail> positions;
+        core.position_store->snapshot(&positions);
+        if (positions.empty()) return "";
 
         json root;
         root["type"] = "pos_snapshot";
         root["data"] = json::array();
 
-        for (const auto& acc_kv : pos_cache_) {
-            for (const auto& pos_kv : acc_kv.second) {
-                const auto& pos = pos_kv.second;
-                json j;
-                j["account_id"] = pos.account_id;
-                j["symbol"] = pos.symbol;
-                j["symbol_id"] = pos.symbol_id;
-                j["long_td"] = pos.long_td;
-                j["long_yd"] = pos.long_yd;
-                j["long_total"] = pos.long_td + pos.long_yd;
-                j["long_price"] = pos.long_avg_price;
-                j["long_pnl"] = pos.long_pnl;
-                
-                j["short_td"] = pos.short_td;
-                j["short_yd"] = pos.short_yd;
-                j["short_total"] = pos.short_td + pos.short_yd;
-                j["short_price"] = pos.short_avg_price;
-                j["short_pnl"] = pos.short_pnl;
-                
-                j["pnl"] = pos.net_pnl;
-                root["data"].push_back(j);
-            }
+        for (const auto& pos : positions) {
+            json j;
+            j["account_id"] = pos.account_id;
+            j["symbol"] = pos.symbol;
+            j["symbol_id"] = pos.symbol_id;
+            j["long_td"] = pos.long_td;
+            j["long_yd"] = pos.long_yd;
+            j["long_total"] = pos.long_td + pos.long_yd;
+            j["long_price"] = pos.long_avg_price;
+            j["long_pnl"] = pos.long_pnl;
+            j["short_td"] = pos.short_td;
+            j["short_yd"] = pos.short_yd;
+            j["short_total"] = pos.short_td + pos.short_yd;
+            j["short_price"] = pos.short_avg_price;
+            j["short_pnl"] = pos.short_pnl;
+            j["pnl"] = pos.net_pnl;
+            root["data"].push_back(j);
+        }
+        return root.dump();
+    }
+
+    std::string buildAccountSnapshotJson() {
+        const auto& core = core::CoreServicesRegistry::get();
+        if (!core.account_store) return "";
+        std::vector<AccountDetail> accounts;
+        core.account_store->snapshot(&accounts);
+        if (accounts.empty()) return "";
+
+        json root;
+        root["type"] = "account_snapshot";
+        root["data"] = json::array();
+
+        for (const auto& acc : accounts) {
+            json j;
+            j["broker_id"] = acc.broker_id;
+            j["account_id"] = acc.account_id;
+            j["balance"] = acc.balance;
+            j["available"] = acc.available;
+            j["margin"] = acc.margin;
+            j["frozen_cash"] = acc.frozen_cash;
+            j["frozen_margin"] = acc.frozen_margin;
+            j["frozen_commission"] = acc.frozen_commission;
+            j["close_pnl"] = acc.close_pnl;
+            j["position_pnl"] = acc.position_pnl;
+            j["pnl"] = acc.close_pnl + acc.position_pnl;
+            root["data"].push_back(j);
         }
         return root.dump();
     }
@@ -306,11 +332,14 @@ private:
 
         MonitorEvent evt;
         auto last_flush = std::chrono::steady_clock::now();
+        const auto flush_interval =
+            std::chrono::milliseconds(std::max(1, query_interval_) * 1000);
 
         while (running_) {
             bool has_event = false;
             // 批量处理队列中的事件，避免频繁锁/IO
-            while (queue_.pop(evt)) {
+            while (queue_.size_approx() > 0) {
+                queue_.pop(evt);
                 has_event = true;
                 json j;
                 
@@ -366,12 +395,6 @@ private:
                     j["code"] = std::string(1, evt.data.conn.status);
                     j["msg"] = gbk_to_utf8(evt.data.conn.msg);
                 }
-                else if (evt.type == EVENT_POS_UPDATE) {
-                    // 标记持仓脏数据，稍后统一推送快照
-                    pos_dirty = true;
-                    continue; // 跳过单条推送
-                }
-
                 if (!j.empty()) {
                     // 添加发送时间戳 (毫秒)
                     j["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -396,24 +419,36 @@ private:
                 }
             }
 
-            // 检查是否需要推送持仓快照 (Debounce: 500ms)
+            // 定时推送仓位与资金快照
             auto now = std::chrono::steady_clock::now();
-            if (pos_dirty && (now - last_flush > std::chrono::milliseconds(500))) {
-                std::string snapshot = buildSnapshotJson();
-                if (!snapshot.empty()) {
-                    // ZMQ
-                    zmq_send(publisher, snapshot.c_str(), snapshot.size(), 0);
-                    // WS
+            if (now - last_flush >= flush_interval) {
+                requestSnapshots();
+                std::string pos_snapshot = buildSnapshotJson();
+                if (!pos_snapshot.empty()) {
+                    zmq_send(publisher, pos_snapshot.c_str(), pos_snapshot.size(), 0);
                     if (ws_server_) {
                         for (auto& client : ws_server_->getClients()) {
-                            client->send(snapshot);
+                            client->send(pos_snapshot);
                         }
                     }
                     if (debug_) {
-                        std::cout << "[Monitor] 批量推送持仓快照: " << snapshot << std::endl;
+                        std::cout << "[Monitor] 定时推送持仓快照: " << pos_snapshot << std::endl;
                     }
                 }
-                pos_dirty = false;
+
+                std::string acc_snapshot = buildAccountSnapshotJson();
+                if (!acc_snapshot.empty()) {
+                    zmq_send(publisher, acc_snapshot.c_str(), acc_snapshot.size(), 0);
+                    if (ws_server_) {
+                        for (auto& client : ws_server_->getClients()) {
+                            client->send(acc_snapshot);
+                        }
+                    }
+                    if (debug_) {
+                        std::cout << "[Monitor] 定时推送资金快照: " << acc_snapshot << std::endl;
+                    }
+                }
+
                 last_flush = now;
             }
 
@@ -433,12 +468,9 @@ private:
     int query_interval_ = 5;
     std::unique_ptr<ix::WebSocketServer> ws_server_;
     
-    // Position Cache for initial snapshots
-    std::unordered_map<std::string, std::unordered_map<uint64_t, PositionDetail>> pos_cache_;
     // Connection Status Cache: Key = AccountID_Source
     std::unordered_map<std::string, ConnectionStatus> conn_cache_;
     std::mutex pos_mtx_;
-    std::atomic<bool> pos_dirty{false};
 
     // Internal queue for decoupling bus and network IO
     MPSCQueue<MonitorEvent> queue_{4096};

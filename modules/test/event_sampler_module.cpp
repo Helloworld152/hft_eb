@@ -22,9 +22,6 @@ std::unordered_map<std::string, EventType> build_event_map() {
         {"EVENT_ORDER_SEND", EVENT_ORDER_SEND},
         {"EVENT_RTN_ORDER", EVENT_RTN_ORDER},
         {"EVENT_RTN_TRADE", EVENT_RTN_TRADE},
-        {"EVENT_RTN_RAW_ORDER", EVENT_RTN_RAW_ORDER},
-        {"EVENT_RTN_RAW_TRADE", EVENT_RTN_RAW_TRADE},
-        {"EVENT_POS_UPDATE", EVENT_POS_UPDATE},
         {"EVENT_RSP_POS", EVENT_RSP_POS},
         {"EVENT_KLINE", EVENT_KLINE},
         {"EVENT_SIGNAL", EVENT_SIGNAL},
@@ -46,9 +43,6 @@ std::unordered_map<EventType, std::string> build_event_name_map() {
         {EVENT_ORDER_SEND, "EVENT_ORDER_SEND"},
         {EVENT_RTN_ORDER, "EVENT_RTN_ORDER"},
         {EVENT_RTN_TRADE, "EVENT_RTN_TRADE"},
-        {EVENT_RTN_RAW_ORDER, "EVENT_RTN_RAW_ORDER"},
-        {EVENT_RTN_RAW_TRADE, "EVENT_RTN_RAW_TRADE"},
-        {EVENT_POS_UPDATE, "EVENT_POS_UPDATE"},
         {EVENT_RSP_POS, "EVENT_RSP_POS"},
         {EVENT_KLINE, "EVENT_KLINE"},
         {EVENT_SIGNAL, "EVENT_SIGNAL"},
@@ -259,14 +253,11 @@ json event_to_json(EventType type, void* data) {
         case EVENT_CANCEL_SEND:
             return cancel_req_to_json(*static_cast<CancelReq*>(data));
         case EVENT_RTN_ORDER:
-        case EVENT_RTN_RAW_ORDER:
             return order_rtn_to_json(*static_cast<OrderRtn*>(data));
         case EVENT_RTN_TRADE:
-        case EVENT_RTN_RAW_TRADE:
             return trade_rtn_to_json(*static_cast<TradeRtn*>(data));
         case EVENT_ACC_UPDATE:
             return account_to_json(*static_cast<AccountDetail*>(data));
-        case EVENT_POS_UPDATE:
         case EVENT_RSP_POS:
             return position_to_json(*static_cast<PositionDetail*>(data));
         case EVENT_SIGNAL:

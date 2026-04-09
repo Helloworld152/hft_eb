@@ -99,24 +99,29 @@ include_directories(core/include)
 # ==========================================
 # 0. 核心基础设施库 (共享单例)
 # ==========================================
-add_library(hft_core SHARED core/src/symbol_manager.cpp core/src/market_snapshot.cpp core/src/tick_window_snapshot.cpp)
+add_library(hft_core SHARED
+    core/src/symbol_manager.cpp
+    core/src/market_snapshot.cpp
+    core/src/tick_window_snapshot.cpp
+    core/src/core_state.cpp)
 target_link_libraries(hft_core PRIVATE rt) # 显式链接实时库以支持 shm_open
+
+# 独立交易网关子系统
+add_subdirectory(trade_gateway)
 
 # 1. 编译插件 A: CTP (模拟)
 add_library(mod_ctp SHARED modules/ctp/ctp_module.cpp)
 target_include_directories(mod_ctp PRIVATE include)
 target_link_libraries(mod_ctp PRIVATE hft_core -Wl,--no-as-needed pthread -Wl,--as-needed)
 
-# 1.1 编译插件 A-Real: CTP (实盘)
-add_library(mod_ctp_real SHARED modules/ctp_real/ctp_real_module.cpp)
-target_include_directories(mod_ctp_real PRIVATE include third_party/ctp/include)
-target_link_directories(mod_ctp_real PRIVATE ${CMAKE_SOURCE_DIR}/third_party/ctp/lib)
-target_link_libraries(mod_ctp_real PRIVATE hft_core thostmduserapi_se thosttraderapi_se -Wl,--no-as-needed pthread -Wl,--as-needed)
-
 # 2. 编译插件 B: Strategy
 add_library(mod_strategy SHARED modules/strategy/simple_strategy.cpp)
 target_include_directories(mod_strategy PRIVATE include)
 target_link_libraries(mod_strategy PRIVATE hft_core)
+
+add_library(mod_t0_rb_strategy SHARED modules/strategy/t0_rb_strategy.cpp)
+target_include_directories(mod_t0_rb_strategy PRIVATE include core/include)
+target_link_libraries(mod_t0_rb_strategy PRIVATE hft_core)
 
 add_library(mod_py_strategy SHARED modules/py_strategy/py_strategy_module.cpp)
 target_include_directories(mod_py_strategy PRIVATE include core/include ${Python3_INCLUDE_DIRS})
@@ -197,6 +202,26 @@ add_library(factor_combiner SHARED modules/factor/combiner_factor.cpp)
 target_include_directories(factor_combiner PRIVATE include core/include)
 target_link_libraries(factor_combiner PRIVATE hft_core yaml-cpp)
 
+# 2.14 编译插件 B-FactorNode: 500ms Mid Return
+add_library(factor_mid_return_500ms SHARED modules/factor/mid_return_500ms_factor.cpp)
+target_include_directories(factor_mid_return_500ms PRIVATE include core/include)
+target_link_libraries(factor_mid_return_500ms PRIVATE hft_core)
+
+# 2.14.1 编译插件 B-FactorNode: 500ms Weighted Mid Return
+add_library(factor_weighted_mid_return_500ms SHARED modules/factor/weighted_mid_return_500ms_factor.cpp)
+target_include_directories(factor_weighted_mid_return_500ms PRIVATE include core/include)
+target_link_libraries(factor_weighted_mid_return_500ms PRIVATE hft_core)
+
+# 2.15 编译插件 B-FactorNode: 500ms Quote Intensity
+add_library(factor_quote_intensity_500ms SHARED modules/factor/quote_intensity_500ms_factor.cpp)
+target_include_directories(factor_quote_intensity_500ms PRIVATE include core/include)
+target_link_libraries(factor_quote_intensity_500ms PRIVATE hft_core)
+
+# 2.16 编译插件 B-FactorNode: 500ms Trade Pressure
+add_library(factor_trade_pressure_500ms SHARED modules/factor/trade_pressure_500ms_factor.cpp)
+target_include_directories(factor_trade_pressure_500ms PRIVATE include core/include)
+target_link_libraries(factor_trade_pressure_500ms PRIVATE hft_core)
+
 # 3. 编译插件 C: SimpleTrade
 add_library(mod_trade SHARED modules/trade/simple_trade.cpp)
 target_include_directories(mod_trade PRIVATE include)
@@ -206,6 +231,11 @@ target_link_libraries(mod_trade PRIVATE hft_core)
 add_library(mod_sim_trade SHARED modules/trade/sim_trade_module.cpp)
 target_include_directories(mod_sim_trade PRIVATE include core/include)
 target_link_libraries(mod_sim_trade PRIVATE hft_core)
+
+# 3.0.1 编译插件 C-GatewayPoll: 独立 gateway 进程轮询桥接
+add_library(mod_gateway_poll SHARED modules/trade/gateway_poll_module.cpp)
+target_include_directories(mod_gateway_poll PRIVATE include core/include trade_gateway/include)
+target_link_libraries(mod_gateway_poll PRIVATE hft_core rt)
 
 # 3.1 编译插件 C-CCAPI: Binance USDT Futures Trade
 add_library(mod_ccapi_binance_usds_trade SHARED modules/trade/ccapi_binance_usds_trade.cpp)
@@ -222,16 +252,6 @@ target_link_libraries(mod_risk PRIVATE hft_core -Wl,--no-as-needed pthread -Wl,-
 add_library(mod_portfolio SHARED modules/portfolio/portfolio_module.cpp)
 target_include_directories(mod_portfolio PRIVATE include)
 target_link_libraries(mod_portfolio PRIVATE hft_core yaml-cpp)
-
-# 5. 编译插件 E: Position Manager
-add_library(mod_position SHARED modules/position/position_module.cpp)
-target_include_directories(mod_position PRIVATE include)
-target_link_libraries(mod_position PRIVATE hft_core nlohmann_json::nlohmann_json)
-
-# 5.1 编译插件 E-Order: Order Manager
-add_library(mod_order SHARED modules/order/order_manager_module.cpp)
-target_include_directories(mod_order PRIVATE include core/include)
-target_link_libraries(mod_order PRIVATE hft_core)
 
 # 6. 编译插件 F: Monitor (WebSocket + ZMQ)
 add_library(mod_monitor SHARED modules/monitor/monitor_module.cpp)

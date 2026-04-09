@@ -2,15 +2,18 @@ trading_hours:
   start: "09:00:00"
   end: "23:00:00"
 
+snapshot:
+  type: local
+
 plugins:
   - name: Replay
-    library: "bin/libmod_replay.so"
+    library: "libmod_replay.so"
     enabled: true
     config:
       data_file: "data/market_data_20260320_night"
 
   - name: FactorDAG
-    library: "bin/libmod_factor_dag.so"
+    library: "libmod_factor_dag.so"
     enabled: true
     config:
       trigger:
@@ -20,29 +23,29 @@ plugins:
         timer_interval_sec: 1
       nodes:
         - id: LAST_PRICE
-          library: "bin/libfactor_last_price.so"
+          library: "libfactor_last_price.so"
           params:
-            symbol: "rb2405"
+            symbol: "rb2605"
         - id: SMA_20
-          library: "bin/libfactor_sma.so"
+          library: "libfactor_sma.so"
           params:
             window: 20
-            symbol: "rb2405"
+            symbol: "rb2605"
         - id: SPREAD
-          library: "bin/libfactor_spread.so"
+          library: "libfactor_spread.so"
           params:
-            symbol: "rb2405"
+            symbol: "rb2605"
         - id: IMBALANCE
-          library: "bin/libfactor_imbalance.so"
+          library: "libfactor_imbalance.so"
           params:
-            symbol: "rb2405"
+            symbol: "rb2605"
         - id: VOL_20
-          library: "bin/libfactor_volatility.so"
+          library: "libfactor_volatility.so"
           params:
             window: 20
-            symbol: "rb2405"
+            symbol: "rb2605"
         - id: COMBO
-          library: "bin/libfactor_combiner.so"
+          library: "libfactor_combiner.so"
           params:
             weights: [0.25, 0.25, 0.25, 0.25]
       edges:
@@ -71,7 +74,10 @@ plugins:
           factor_name: "COMBO"
 
   - name: SignalCsv
-    library: "bin/libmod_signal_csv.so"
+    library: "libmod_signal_csv.so"
     enabled: true
     config:
       output_path: "log/signal.csv"
+      flush_every: 100
+      include_header: true
+      log_interval_ms: 1000

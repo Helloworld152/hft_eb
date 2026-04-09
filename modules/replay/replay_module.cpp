@@ -3,8 +3,7 @@
 #include "mmap_util.h"
 #include "market_snapshot.h"
 #include <iostream>
-#include <thread>
-#include <atomic>
+#include <memory>
 #include <cstring>
 #include <chrono>
 #include <immintrin.h> // 用于 _mm_pause
@@ -41,85 +40,91 @@ public:
                       << (max_capacity_ * sizeof(TickRecord) / (1024.0 * 1024.0 * 1024.0)) << " GB)";
         }
         std::cout << std::endl;
+
+        bus_->subscribe(EVENT_POLL_REPLAY, [this](void*) {
+            this->poll_once();
+        });
     }
 
     void start() override {
         running_ = true;
-        thread_ = std::thread(&ReplayModule::run, this);
     }
 
     void stop() override {
         running_ = false;
-        if (thread_.joinable()) thread_.join();
+        reader_.reset();
         MarketSnapshot::instance().clear();
         std::cout << "[Replay] Final Ticks: " << tick_count_ << std::endl;
     }
 
 private:
-    void run() {
-        while (running_) {
-            try {
-                // 尝试连接到 Mmap 通道
-                MmapReader<TickRecord> reader(file_path_, max_capacity_);
-                std::cout << "[Replay] 已连接到 Mmap 管道，开始回放..." << std::endl;
+    void poll_once() {
+        if (!running_) return;
 
-                auto start_t = std::chrono::high_resolution_clock::now();
-                bool perf_logged = false;
-                last_data_time_ = std::chrono::steady_clock::now();
-                
-                // 批量读取缓冲区（可选优化）
-                constexpr size_t BATCH_SIZE = 16;
-                const TickRecord* batch_ptrs[BATCH_SIZE];
+        if (!ensure_reader_ready()) {
+            return;
+        }
 
-                while (running_) {
-                    // 批量读取模式：一次读取多条记录
-                    size_t batch_count = reader.read_batch(batch_ptrs, BATCH_SIZE);
-                    
-                    if (batch_count > 0) {
-                        if (debug_ && tick_count_ == 0) {
-                            start_t = std::chrono::high_resolution_clock::now();
-                        }
-                        
-                        // 处理批量数据
-                        for (size_t i = 0; i < batch_count; ++i) {
-                            publish_tick(*batch_ptrs[i]);
-                        }
-                        perf_logged = false;
-                        last_data_time_ = std::chrono::steady_clock::now();
-                    } else {
-                        if (idle_stop_sec_ > 0) {
-                            auto now = std::chrono::steady_clock::now();
-                            auto idle_sec = std::chrono::duration_cast<std::chrono::seconds>(now - last_data_time_).count();
-                            if (idle_sec >= idle_stop_sec_) {
-                                std::cout << "[Replay] Idle timeout reached (" << idle_stop_sec_
-                                          << "s). Stopping engine." << std::endl;
-                                bus_->publish(EVENT_ENGINE_STOP, nullptr);
-                                running_ = false;
-                                return;
-                            }
-                        }
+        constexpr size_t BATCH_SIZE = 16;
+        const TickRecord* batch_ptrs[BATCH_SIZE];
+        const size_t batch_count = reader_->read_batch(batch_ptrs, BATCH_SIZE);
 
-                        if (debug_ &&tick_count_ > 0 && !perf_logged) {
-                            auto end_t = std::chrono::high_resolution_clock::now();
-                            auto cost_us = std::chrono::duration_cast<std::chrono::microseconds>(end_t - start_t).count();
-                            std::cout << "[Replay] Finished/Paused. Ticks: " << tick_count_ 
-                                      << ", Cost: " << cost_us << " us" << std::endl;
-                            perf_logged = true;
-                        }
+        if (batch_count == 0) {
+            maybe_stop_on_idle();
+            return;
+        }
 
-                        // 无锁轮询，极低延迟
-                        // _mm_pause(); 
-                        
-                        // 可选：如果 CPU 负载过高，可取消下面的注释
-                        std::this_thread::sleep_for(std::chrono::microseconds(1));
-                    }
-                }
+        if (debug_ && tick_count_ == 0) {
+            replay_start_t_ = std::chrono::high_resolution_clock::now();
+        }
+
+        for (size_t i = 0; i < batch_count; ++i) {
+            publish_tick(*batch_ptrs[i]);
+        }
+        perf_logged_ = false;
+        last_data_time_ = std::chrono::steady_clock::now();
+    }
+
+    bool ensure_reader_ready() {
+        if (reader_) return true;
+
+        auto now = std::chrono::steady_clock::now();
+        if (now - last_open_attempt_ < std::chrono::seconds(1)) {
+            return false;
+        }
+        last_open_attempt_ = now;
+
+        try {
+            reader_ = std::make_unique<MmapReader<TickRecord>>(file_path_, max_capacity_);
+            last_data_time_ = now;
+            perf_logged_ = false;
+            std::cout << "[Replay] 已连接到 Mmap 管道，开始回放..." << std::endl;
+            return true;
+        } catch (const std::exception& e) {
+            std::cout << "[Replay] 等待数据源 (" << file_path_ << ")... " << e.what() << std::endl;
+            return false;
+        }
+    }
+
+    void maybe_stop_on_idle() {
+        if (idle_stop_sec_ > 0) {
+            auto now = std::chrono::steady_clock::now();
+            auto idle_sec = std::chrono::duration_cast<std::chrono::seconds>(now - last_data_time_).count();
+            if (idle_sec >= idle_stop_sec_) {
+                std::cout << "[Replay] Idle timeout reached (" << idle_stop_sec_
+                          << "s). Stopping engine." << std::endl;
+                bus_->publish(EVENT_ENGINE_STOP, nullptr);
+                running_ = false;
                 return;
-            } catch (const std::exception& e) {
-                // 可能 Writer 尚未创建文件，等待并重试
-                std::cout << "[Replay] 等待数据源 (" << file_path_ << ")... " << e.what() << std::endl;
-                std::this_thread::sleep_for(std::chrono::seconds(1));
             }
+        }
+
+        if (debug_ && tick_count_ > 0 && !perf_logged_) {
+            auto end_t = std::chrono::high_resolution_clock::now();
+            auto cost_us = std::chrono::duration_cast<std::chrono::microseconds>(end_t - replay_start_t_).count();
+            std::cout << "[Replay] Finished/Paused. Ticks: " << tick_count_
+                      << ", Cost: " << cost_us << " us" << std::endl;
+            perf_logged_ = true;
         }
     }
 
@@ -140,13 +145,16 @@ private:
 
     EventBus* bus_ = nullptr;
     std::string file_path_;
-    std::thread thread_;
-    std::atomic<bool> running_{false};
+    std::unique_ptr<MmapReader<TickRecord>> reader_;
+    bool running_ = false;
     bool debug_ = false;
     uint64_t tick_count_ = 0; // 计数器
     uint64_t max_capacity_ = 0; // 最大容量（0 表示使用 meta 文件中的 capacity）
     int idle_stop_sec_ = 0; // 空闲超时停止（秒）
     std::chrono::steady_clock::time_point last_data_time_;
+    std::chrono::steady_clock::time_point last_open_attempt_{};
+    std::chrono::high_resolution_clock::time_point replay_start_t_{};
+    bool perf_logged_ = false;
 };
 
 EXPORT_MODULE(ReplayModule)

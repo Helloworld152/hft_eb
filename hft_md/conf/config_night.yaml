@@ -872,8 +872,9 @@ symbols:
 - zn2702
 output_path: ../data/
 file_suffix: _night
-trading_day: '20260227'
+trading_day: '20260408'
 start_time: 20:50:00
 end_time: 02:40:00
 initial_capacity: 50000000
+prefault: true
 shm: /hft_md_snapshot

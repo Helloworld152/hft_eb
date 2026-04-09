@@ -156,12 +156,10 @@ EVENT_SIGNAL
     -> PortfolioModule (聚合+裁剪)
         -> EVENT_ORDER_REQ
             -> RiskModule
-                -> OrderManager
-                    -> Trade/Gateway
-                        -> EVENT_RTN_RAW_ORDER / EVENT_RTN_RAW_TRADE
-                            -> OrderManager
-                                -> EVENT_RTN_ORDER / EVENT_RTN_TRADE
-                                    -> Position/Account 更新
+                -> EVENT_ORDER_SEND
+                    -> Gateway/Trade 插件
+                        -> 直接更新 Order/Position/Account
+                        -> EVENT_RTN_ORDER / EVENT_RTN_TRADE
 ```
 
 ## 9. 异常与边界处理

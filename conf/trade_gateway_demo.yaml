@@ -1,0 +1,20 @@
+gateway_id: "demo_ctp_gw"
+account_id: "DEMO"
+symbols_file: "conf/symbols.txt"
+
+cmd_shm: "/cmd_ring_demo_ctp_gw"
+rtn_shm: "/rtn_ring_demo_ctp_gw"
+ring_capacity: 1024
+create_rings: true
+unlink_on_exit: false
+debug: true
+
+td_front: "tcp://127.0.0.1:12345"
+broker_id: "9999"
+user_id: "DEMO"
+password: "DEMO_PASSWORD"
+app_id: ""
+auth_code: ""
+flow_dir: "./flow_log"
+reconnect_times: "08:55:00-15:30:00,20:55:00-02:35:00"
+reconnect_delay: 5

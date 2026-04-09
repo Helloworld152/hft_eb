@@ -1,4 +1,4 @@
-# 模拟成交回测：Replay + Simple_Strategy + Risk + Order + Position + Account + SimTrade
+# 模拟成交回测：Replay + Simple_Strategy + Risk + CoreState + SimTrade
 # 运行：./bin/hft_engine conf/config_sim_backtest.yaml
 
 symbols_file: ../conf/symbols.txt
@@ -11,7 +11,7 @@ plugins:
     library: libmod_replay.so
     enabled: true
     config:
-      data_file: data/market_data_20260319_night
+      data_file: data/market_data_20260320
       debug: false
 
   - name: Simple_Strategy
@@ -27,27 +27,6 @@ plugins:
     enabled: true
     config:
       max_orders_per_second: 100
-
-  - name: Order_Manager
-    library: libmod_order.so
-    enabled: true
-    config:
-      node_id: 1
-      debug: true
-
-  - name: Position_Manager
-    library: libmod_position.so
-    enabled: true
-    config:
-      dump_path: data/pos_sim_backtest.json
-      query_interval: 3600
-
-  - name: Account_Manager
-    library: libmod_account.so
-    enabled: true
-    config:
-      dump_path: data/acc_sim_backtest.json
-      query_interval: 3600
 
   - name: SimTrade
     library: libmod_sim_trade.so

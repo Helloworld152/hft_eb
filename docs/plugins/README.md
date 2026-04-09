@@ -8,6 +8,10 @@
 - 文档内容必须遵循 `docs/插件参数说明规范_plugin_params.md`
 
 ## 索引
+- `Replay` → `replay.md`
+- `PyStrategy` → `py_strategy.md`
+- `Portfolio` → `portfolio.md`
+- `GatewayPoll` → `gateway_poll.md`
 - `StrategyTreeParallel` → `strategy_tree_parallel.md`
 - `SignalCsv` → `signal_csv.md`
 - `FactorDAGModule` → `factor_dag_module.md`

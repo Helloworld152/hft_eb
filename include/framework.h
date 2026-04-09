@@ -16,21 +16,20 @@
 // 事件类型
 enum EventType {
     EVENT_MARKET_DATA = 0, // 行情
+    EVENT_POLL_GATEWAY,    // 驱动 gateway 插件抓取回报
+    EVENT_POLL_REPLAY,     // 驱动 replay 插件抓取 tick
     EVENT_ORDER_REQ,       // 报单请求 (策略意图)
     EVENT_ORDER_SEND,      // 报单指令 (经风控批准)
-    EVENT_RTN_ORDER,       // 处理后的报单回报 (OrderManager -> Strategy/Position)
-    EVENT_RTN_TRADE,       // 处理后的成交回报 (OrderManager -> Strategy/Position)
-    EVENT_RTN_RAW_ORDER,   // 原始报单回报 (TradeModule -> OrderManager)
-    EVENT_RTN_RAW_TRADE,   // 原始成交回报 (TradeModule -> OrderManager)
-    EVENT_POS_UPDATE,      // 持仓更新 (PositionModule -> Others)
-    EVENT_RSP_POS,         // 持仓查询回报 (CtpReal -> PositionModule)
+    EVENT_RTN_ORDER,       // 报单回报
+    EVENT_RTN_TRADE,       // 成交回报
+    EVENT_RSP_POS,         // 持仓查询回报 (TradeModule -> Core PositionService)
     EVENT_KLINE,           // K线数据
     EVENT_SIGNAL,          // 因子信号 (Factor Signal)
     EVENT_QRY_POS,         // 主动查询持仓请求
     EVENT_QRY_ACC,         // 主动查询资金请求
     EVENT_CANCEL_REQ,      // 撤单请求 (策略发出)
     EVENT_CANCEL_SEND,     // 撤单指令 (OrderManager 发出)
-    EVENT_ACC_UPDATE,      // 资金更新回报
+    EVENT_ACC_UPDATE,      // 资金更新回报 (TradeModule -> Core AccountService)
     EVENT_CONN_STATUS,     // 连接状态更新
     EVENT_LOG,             // 日志
     EVENT_CACHE_RESET,     // 缓存重置信号 (由登录后的柜台确认触发)

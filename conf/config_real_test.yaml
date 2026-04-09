@@ -7,67 +7,45 @@ snapshot:
 
 plugins:
   - name: WebSocket_Monitor
-    library: "../bin/libmod_monitor.so"
+    library: "libmod_monitor.so"
     enabled: true
     config:
       ws_port: 8877
       pub_addr: "tcp://*:5555"
       debug: false
   
-  - name: CTP_Trade_Real_1
-    library: "../bin/libmod_ctp_real.so"
+  - name: Gateway_Poll_1
+    library: "libmod_gateway_poll.so"
     enabled: true
     config:
-      td_front: "tcp://182.254.243.31:30001"
-      broker_id: "9999"
-      user_id: "247060"
-      password: "RY20000219*"
+      gateway_id: "247060"
+      account_id: "247060"
+      cmd_shm: "/cmd_ring_247060"
+      rtn_shm: "/rtn_ring_247060"
+      ring_capacity: "1024"
+      poll_batch: "256"
       debug: false
-      reconnect_times: "08:55:00-15:30:00,20:55:00-02:35:00"  # 白天+夜盘（提前延后5分钟）
-      reconnect_delay: 30
   
-  - name: CTP_Trade_Real_2
-    library: "../bin/libmod_ctp_real.so"
+  - name: Gateway_Poll_2
+    library: "libmod_gateway_poll.so"
     enabled: true
     config:
-      td_front: "tcp://182.254.243.31:30001"
-      broker_id: "9999"
-      user_id: "253535"
-      password: "20051215@Jenny"
-      debug: false
-      reconnect_times: "08:55:00-15:30:00,20:55:00-02:35:00"  # 白天+夜盘（提前延后5分钟）
-      reconnect_delay: 30
-
-  - name: CTP_Trade_Real_3
-    library: "../bin/libmod_ctp_real.so"
-    enabled: true
-    config:
-      td_front: "tcp://182.254.243.31:30001"
-      broker_id: "9999"
-      user_id: "255028"
-      password: "Jzx1357924680!"
-      debug: false
-      reconnect_times: "08:55:00-15:30:00,20:55:00-02:35:00"  # 白天+夜盘（提前延后5分钟）
-      reconnect_delay: 30
-
-  - name: Order_Manager
-    library: "../bin/libmod_order.so"
-    enabled: true
-    config:
-      node_id: 1
+      gateway_id: "253535"
+      account_id: "253535"
+      cmd_shm: "/cmd_ring_253535"
+      rtn_shm: "/rtn_ring_253535"
+      ring_capacity: "1024"
+      poll_batch: "256"
       debug: false
 
-  - name: Position_Manager
-    library: "../bin/libmod_position.so"
+  - name: Gateway_Poll_3
+    library: "libmod_gateway_poll.so"
     enabled: true
     config:
-      dump_path: "../data/pos_real.json"
-      query_interval: 15 # 主动查询间隔(秒)
-
-  - name: Account_Manager
-    library: "../bin/libmod_account.so"
-    enabled: true
-    config:
-      dump_path: "../data/acc_real.json"
-      query_interval: 15
-
+      gateway_id: "255028"
+      account_id: "255028"
+      cmd_shm: "/cmd_ring_255028"
+      rtn_shm: "/rtn_ring_255028"
+      ring_capacity: "1024"
+      poll_batch: "256"
+      debug: false

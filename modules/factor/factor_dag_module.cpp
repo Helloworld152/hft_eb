@@ -295,6 +295,8 @@ private:
     void eval_and_publish() {
         for (const auto& out : outputs_) {
             if (!out.node) continue;
+            if (current_tick_id_ != 0 && out.has_symbol && out.symbol_id != current_tick_id_) continue;
+            if (current_kline_id_ != 0 && out.has_symbol && out.symbol_id != current_kline_id_) continue;
             const TickRecord* tick = get_tick_for_node(out.node);
             const KlineRecord* kline = get_kline_for_node(out.node);
             if (!tick && !kline) continue;

@@ -6,6 +6,7 @@
 #include <functional>  // 保留用于兼容接口
 #include <cstdint>
 #include "framework.h"
+#include "../core/include/core_state.h"
 
 class EventBusImpl;
 struct PluginHandle;
@@ -55,6 +56,9 @@ private:
     std::vector<TimerTask> timer_tasks_;
     uint64_t total_seconds_ = 0;
     std::unique_ptr<ITimerService> timer_svc_;
+    std::unique_ptr<core::PositionService> position_service_;
+    std::unique_ptr<core::OrderService> order_service_;
+    std::unique_ptr<core::AccountService> account_service_;
 
     // 高性能接口：StaticDelegate
     void add_timer_impl(int interval_sec, StaticDelegate<void()> cb, int phase_sec = 0);

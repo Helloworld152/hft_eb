@@ -61,6 +61,9 @@ struct AccountDetail {
     double balance;         // 昨结 + 入金 - 出金
     double available;       // 可用资金
     double margin;          // 占用保证金
+    double frozen_cash;     // 冻结资金
+    double frozen_margin;   // 冻结保证金
+    double frozen_commission; // 冻结手续费
     double close_pnl;       // 平仓盈亏
     double position_pnl;    // 持仓盈亏
 };
@@ -143,6 +146,24 @@ struct PositionDetail {
     double net_pnl;
 };
 
+struct OrderState {
+    char account_id[16];
+    char order_ref[13];
+    char order_sys_id[21];
+    char exchange_id[9];
+    char symbol[32];
+    uint64_t symbol_id;
+    char direction;
+    char offset_flag;
+    double limit_price;
+    int volume_total;
+    int volume_traded;
+    int volume_canceled;
+    char status;
+    char status_msg[81];
+    uint64_t update_ts;
+};
+
 // 因子信号数据结构
 struct SignalRecord {
     char source_id[32];    // 来源节点 ID (如 "FACTOR_RSI")
@@ -164,4 +185,27 @@ struct CacheReset {
     uint32_t trading_day; // YYYYMMDD
     uint32_t reset_type;  // 0x1: Position, 0x2: Orders, 0xFF: All
     char reason[64];
+};
+
+struct PositionUpdate {
+    enum class Type : uint8_t { Trade, RspPos, Reset };
+    Type type;
+    TradeRtn trade;
+    PositionDetail pos;
+    CacheReset reset;
+};
+
+struct OrderUpdate {
+    enum class Type : uint8_t { OrderRtn, TradeRtn, Reset };
+    Type type;
+    OrderRtn order;
+    TradeRtn trade;
+    CacheReset reset;
+};
+
+struct AccountUpdate {
+    enum class Type : uint8_t { Account, Reset };
+    Type type;
+    AccountDetail account;
+    CacheReset reset;
 };

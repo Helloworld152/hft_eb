@@ -22,8 +22,8 @@ template <typename T>
 class MmapWriter {
 public:
     // capacity: 能够存储的记录总数
-    MmapWriter(const std::string& base_path, uint64_t capacity) 
-        : base_path_(base_path), capacity_(capacity) {
+    MmapWriter(const std::string& base_path, uint64_t capacity, bool prefault = false) 
+        : base_path_(base_path), capacity_(capacity), prefault_(prefault) {
         std::string dat_path = base_path + ".dat";
         std::string meta_path = base_path + ".meta";
 
@@ -44,6 +44,12 @@ public:
             throw std::runtime_error("mmap 数据文件失败");
         }
         close(fd_dat);
+        if (prefault_) {
+            volatile char* p = reinterpret_cast<volatile char*>(data_ptr_);
+            for (uint64_t i = 0; i < dat_size; i += 4096) {
+                p[i] = p[i];
+            }
+        }
 
         // 2. 打开/创建元数据文件
         int fd_meta = open(meta_path.c_str(), O_RDWR | O_CREAT, 0666);
@@ -108,6 +114,7 @@ private:
     uint64_t capacity_;
     T* data_ptr_ = nullptr;
     MetaHeader* meta_ptr_ = nullptr;
+    bool prefault_ = false;
 };
 
 // ---------------------------------------------------------
