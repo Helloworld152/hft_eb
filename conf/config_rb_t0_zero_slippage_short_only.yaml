@@ -1,0 +1,100 @@
+## 零滑点对照：IMB + MID_RET_500MS，只做空
+## 运行方式：
+## ./bin/hft_engine conf/config_rb_t0_zero_slippage_short_only.yaml
+
+trading_hours:
+  start: "09:00:00"
+  end: "23:00:00"
+
+symbols_file: conf/symbols.txt
+
+snapshot:
+  type: local
+
+plugins:
+  - name: Replay
+    library: libmod_replay.so
+    enabled: true
+    config:
+      data_file: data/market_data_20260403
+      debug: false
+      idle_stop_sec: 5
+
+  - name: FactorDAG
+    library: libmod_factor_dag.so
+    enabled: true
+    config:
+      trigger:
+        on_tick: true
+        on_kline: false
+        on_timer: false
+      nodes:
+        - id: IMB
+          library: libfactor_imbalance.so
+          params:
+            symbol: rb2605
+        - id: MID_RET_500MS
+          library: libfactor_mid_return_500ms.so
+          params:
+            symbol: rb2605
+            window_ms: 500
+            tick_size: 1
+        - id: ALPHA
+          library: libfactor_combiner.so
+          params:
+            symbol: rb2605
+            weights: [0.55, 0.45]
+      edges:
+        - from: IMB
+          to: ALPHA
+        - from: MID_RET_500MS
+          to: ALPHA
+      outputs:
+        - node: IMB
+          factor_name: IMB
+        - node: MID_RET_500MS
+          factor_name: MID_RET_500MS
+        - node: ALPHA
+          factor_name: ALPHA_SCORE
+
+  - name: T0_RB_Strategy
+    library: libmod_t0_rb_strategy.so
+    enabled: true
+    config:
+      symbol: rb2605
+      signal_name: ALPHA_SCORE
+      default_account: SIM
+      trade_side: short_only
+      decision_interval_ms: 500
+      entry_threshold_long: "0.50"
+      entry_threshold_short: "-0.50"
+      exit_threshold_abs: "0.10"
+      max_abs_pos: "3"
+      order_volume: "1"
+      max_hold_ms: "3000"
+      min_reentry_ms: "1000"
+      debug: true
+
+  - name: Risk
+    library: libmod_risk.so
+    enabled: true
+    config:
+      max_orders_per_second: 100000
+
+  - name: SimTrade
+    library: libmod_sim_trade.so
+    enabled: true
+    config:
+      debug: true
+      slippage_ticks: "0"
+      tick_size: "1"
+      initial_balance: "1000000"
+      account_id: "SIM"
+
+  - name: SignalCsv
+    library: libmod_signal_csv.so
+    enabled: true
+    config:
+      output_path: "log/rb_t0_signal_zero_slippage_short_only.csv"
+      flush_every: "1000"
+      include_header: "true"

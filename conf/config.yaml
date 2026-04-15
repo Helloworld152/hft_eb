@@ -4,7 +4,7 @@ trading_hours:
 
 plugins:
   - name: CTP_Market
-    library: "../bin/libmod_ctp.so"
+    library: "libmod_ctp.so"
     enabled: true
     config:
       symbol: rb2410
@@ -13,7 +13,7 @@ plugins:
       account: "00001"
 
   - name: Grid_Strategy_A
-    library: "../bin/libmod_strategy.so"
+    library: "libmod_strategy.so"
     enabled: true
     config:
       buy_thresh: 3480.0
@@ -21,7 +21,7 @@ plugins:
       max_pos: 10
 
   - name: Simple_Trade
-    library: "../bin/libmod_trade.so"
+    library: "libmod_trade.so"
     enabled: true
     config:
       id: SimTrade_1

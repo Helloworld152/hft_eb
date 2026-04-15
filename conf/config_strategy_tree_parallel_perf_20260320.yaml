@@ -4,14 +4,14 @@ trading_hours:
 
 plugins:
   - name: Replay
-    library: "bin/libmod_replay.so"
+    library: "libmod_replay.so"
     enabled: true
     config:
       data_file: "data/market_data_20260320"
       interval_ms: 1
 
   - name: StrategyTreeParallel
-    library: "bin/libmod_strategy_tree_parallel.so"
+    library: "libmod_strategy_tree_parallel.so"
     enabled: true
     config:
       parallel: true
@@ -21,25 +21,25 @@ plugins:
       publish_signals: true
       nodes:
         - id: FACTOR_SMA
-          library: "bin/libstrat_sma.so"
+          library: "libstrat_sma.so"
           params:
             window_size: 20
             multiplier: 1000.0
             debug: false
 
         - id: FACTOR_IMB
-          library: "bin/libstrat_imbalance.so"
+          library: "libstrat_imbalance.so"
           params:
             debug: false
 
         - id: FACTOR_JUMP
-          library: "bin/libstrat_price_jump.so"
+          library: "libstrat_price_jump.so"
           params:
             threshold: 0.1
             debug: false
 
   - name: SignalCsv
-    library: "bin/libmod_signal_csv.so"
+    library: "libmod_signal_csv.so"
     enabled: true
     config:
       output_path: "log/signal_20260320_full.csv"
