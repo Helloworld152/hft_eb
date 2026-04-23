@@ -63,6 +63,47 @@ public:
         return true;
     }
 
+    T* claim() noexcept {
+        const size_t ticket = tail_local_;
+        Slot& slot = slots_[ticket & mask_];
+        if (slot.sequence.load(std::memory_order_acquire) != ticket) {
+            return nullptr;
+        }
+        return &slot.data;
+    }
+
+    void publish() noexcept {
+        const size_t ticket = tail_local_;
+        Slot& slot = slots_[ticket & mask_];
+        slot.sequence.store(ticket + 1, std::memory_order_release);
+        tail_local_ = ticket + 1;
+    }
+
+    const T* peek() const noexcept {
+        const size_t ticket = head_local_;
+        const Slot& slot = slots_[ticket & mask_];
+        if (slot.sequence.load(std::memory_order_acquire) != ticket + 1) {
+            return nullptr;
+        }
+        return &slot.data;
+    }
+
+    T* peek() noexcept {
+        const size_t ticket = head_local_;
+        Slot& slot = slots_[ticket & mask_];
+        if (slot.sequence.load(std::memory_order_acquire) != ticket + 1) {
+            return nullptr;
+        }
+        return &slot.data;
+    }
+
+    void commit() noexcept {
+        const size_t ticket = head_local_;
+        Slot& slot = slots_[ticket & mask_];
+        slot.sequence.store(ticket + capacity_, std::memory_order_release);
+        head_local_ = ticket + 1;
+    }
+
 private:
     struct Slot {
         alignas(CACHE_LINE_SIZE) std::atomic<size_t> sequence{0};
