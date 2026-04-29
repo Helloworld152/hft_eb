@@ -1,6 +1,7 @@
 #include "../include/trade_gateway/gateway_runtime.h"
 
 #include "../../core/include/symbol_manager.h"
+#include "../include/trade_gateway/gateway_adapter_factory.h"
 
 #include <chrono>
 #include <cstring>
@@ -30,7 +31,7 @@ bool GatewayRuntime::init() {
     rtn_ring_.open(gateway_config_.rtn_shm, gateway_config_.ring_capacity,
                    gateway_config_.create_rings, gateway_config_.unlink_on_exit);
 
-    adapter_ = std::make_unique<CtpGatewayAdapter>(gateway_config_);
+    adapter_ = create_gateway_adapter(gateway_config_);
     adapter_->set_event_publisher([this](const GatewayEvent& event) { this->publish_event(event); });
     return true;
 }
@@ -43,6 +44,7 @@ int GatewayRuntime::run() {
     std::cout << "[TradeGateway] Starting gateway runtime"
               << " gateway_id=" << gateway_config_.gateway_id
               << " account_id=" << gateway_config_.account_id
+              << " adapter=" << gateway_config_.adapter_type
               << " config=" << config_.config_path
               << " cmd_shm=" << gateway_config_.cmd_shm
               << " rtn_shm=" << gateway_config_.rtn_shm

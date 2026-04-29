@@ -9,6 +9,7 @@ namespace trade_gateway {
 struct GatewayConfig {
     std::string gateway_id;
     std::string account_id;
+    std::string adapter_type;
     std::string symbols_file = "conf/symbols.txt";
     std::string cmd_shm;
     std::string rtn_shm;

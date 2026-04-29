@@ -1,5 +1,6 @@
 #pragma once
 
+#include "gateway_adapter.h"
 #include "gateway_config.h"
 #include "gateway_protocol.h"
 
@@ -14,31 +15,29 @@
 
 namespace trade_gateway {
 
-class CtpGatewayAdapter {
+class CtpGatewayAdapter : public IGatewayAdapter {
 public:
-    using EventPublisher = std::function<void(const GatewayEvent&)>;
-
     explicit CtpGatewayAdapter(const GatewayConfig& config);
     ~CtpGatewayAdapter();
 
     CtpGatewayAdapter(const CtpGatewayAdapter&) = delete;
     CtpGatewayAdapter& operator=(const CtpGatewayAdapter&) = delete;
 
-    void set_event_publisher(EventPublisher publisher);
+    void set_event_publisher(EventPublisher publisher) override;
 
-    void connect();
-    void stop();
+    void connect() override;
+    void stop() override;
 
-    bool is_ready() const noexcept { return ready_.load(std::memory_order_acquire); }
+    bool is_ready() const noexcept override { return ready_.load(std::memory_order_acquire); }
     bool is_logged_in() const noexcept { return logged_in_.load(std::memory_order_acquire); }
 
-    bool should_reconnect_now() const;
+    bool should_reconnect_now() const override;
 
-    bool submit_order(const OrderReq& req);
-    bool cancel_order(const CancelReq& req);
-    bool query_position();
-    bool query_account();
-    bool query_open_orders();
+    bool submit_order(const OrderReq& req) override;
+    bool cancel_order(const CancelReq& req) override;
+    bool query_position() override;
+    bool query_account() override;
+    bool query_open_orders() override;
     void on_ready();
 
 private:

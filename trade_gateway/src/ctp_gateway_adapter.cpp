@@ -30,6 +30,11 @@ void copy_header(MessageHeader* header,
     std::strncpy(header->account_id, config.account_id.c_str(), sizeof(header->account_id) - 1);
 }
 
+void debug_log(const GatewayConfig& config, const std::string& message) {
+    if (!config.debug) return;
+    std::cout << "[CTPAdapter] " << message << std::endl;
+}
+
 }  // namespace
 
 CtpGatewayAdapter::CtpGatewayAdapter(const GatewayConfig& config) : config_(config) {}
@@ -44,6 +49,9 @@ void CtpGatewayAdapter::set_event_publisher(EventPublisher publisher) {
 
 void CtpGatewayAdapter::connect() {
     last_connect_attempt_ns_.store(now_ns(), std::memory_order_relaxed);
+    debug_log(config_, "connect start gateway_id=" + config_.gateway_id +
+                           " account_id=" + config_.account_id +
+                           " td_front=" + config_.td_front);
 
     if (td_api_) {
         td_api_->RegisterSpi(nullptr);
@@ -60,6 +68,7 @@ void CtpGatewayAdapter::connect() {
     logged_in_.store(false, std::memory_order_release);
 
     std::string flow_path = config_.flow_dir + "/td_" + config_.user_id + "_";
+    debug_log(config_, "create trader api flow_path=" + flow_path);
     td_api_ = CThostFtdcTraderApi::CreateFtdcTraderApi(flow_path.c_str());
     td_spi_ = new TraderSpi(this);
     td_api_->RegisterSpi(td_spi_);
@@ -70,6 +79,7 @@ void CtpGatewayAdapter::connect() {
 }
 
 void CtpGatewayAdapter::stop() {
+    debug_log(config_, "stop");
     ready_.store(false, std::memory_order_release);
     logged_in_.store(false, std::memory_order_release);
     if (td_api_) {
@@ -112,6 +122,13 @@ bool CtpGatewayAdapter::submit_order(const OrderReq& req) {
         publish_error(GatewayErrorCode::NotReady, "CTP gateway not ready");
         return false;
     }
+    debug_log(config_, "submit order account_id=" + std::string(req.account_id) +
+                           " symbol=" + req.symbol +
+                           " order_ref=" + req.order_ref +
+                           " direction=" + std::string(1, req.direction) +
+                           " offset=" + std::string(1, req.offset_flag) +
+                           " price=" + std::to_string(req.price) +
+                           " volume=" + std::to_string(req.volume));
     CThostFtdcInputOrderField order = {0};
     std::strncpy(order.BrokerID, config_.broker_id.c_str(), sizeof(order.BrokerID) - 1);
     std::strncpy(order.InvestorID, config_.user_id.c_str(), sizeof(order.InvestorID) - 1);
@@ -145,6 +162,10 @@ bool CtpGatewayAdapter::cancel_order(const CancelReq& req) {
         publish_error(GatewayErrorCode::NotReady, "CTP gateway not ready for cancel");
         return false;
     }
+    debug_log(config_, "cancel order account_id=" + std::string(req.account_id) +
+                           " symbol=" + req.symbol +
+                           " order_ref=" + req.order_ref +
+                           " client_id=" + std::to_string(req.client_id));
     CThostFtdcInputOrderActionField action = {0};
     std::strncpy(action.BrokerID, config_.broker_id.c_str(), sizeof(action.BrokerID) - 1);
     std::strncpy(action.InvestorID, config_.user_id.c_str(), sizeof(action.InvestorID) - 1);
@@ -175,12 +196,16 @@ bool CtpGatewayAdapter::query_open_orders() {
 
 void CtpGatewayAdapter::on_ready() {
     ready_.store(true, std::memory_order_release);
-    query_open_orders_internal(false);
+    debug_log(config_, "ready, query open orders / position / account");
+    // query_open_orders_internal(false);
     query_position_internal(false);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     query_account_internal(false);
 }
 
 void CtpGatewayAdapter::publish_status(char status, const char* msg) {
+    debug_log(config_, "status code=" + std::string(1, status) +
+                           " msg=" + (msg ? std::string(msg) : std::string("")));
     if (!publisher_) return;
     GatewayEvent event{};
     copy_header(&event.header, EventType::ConnectionStatus, sizeof(ConnectionStatus), config_);
@@ -195,6 +220,8 @@ void CtpGatewayAdapter::publish_status(char status, const char* msg) {
 }
 
 void CtpGatewayAdapter::publish_error(GatewayErrorCode code, const std::string& message) {
+    std::cerr << "[CTPAdapter] error code=" << static_cast<int32_t>(code)
+              << " msg=" << message << std::endl;
     if (!publisher_) return;
     GatewayEvent event{};
     copy_header(&event.header, EventType::GatewayError, sizeof(GatewayErrorPayload), config_);
@@ -257,6 +284,7 @@ bool CtpGatewayAdapter::query_account_internal(bool log_error) {
     CThostFtdcQryTradingAccountField req = {0};
     std::strncpy(req.BrokerID, config_.broker_id.c_str(), sizeof(req.BrokerID) - 1);
     std::strncpy(req.InvestorID, config_.user_id.c_str(), sizeof(req.InvestorID) - 1);
+    debug_log(config_, "query account");
     int ret = td_api_->ReqQryTradingAccount(&req, req_id_++);
     if (ret != 0 && log_error) {
         publish_error(GatewayErrorCode::ApiError, "ReqQryTradingAccount failed: " + std::to_string(ret));
@@ -272,6 +300,7 @@ bool CtpGatewayAdapter::query_position_internal(bool log_error) {
     CThostFtdcQryInvestorPositionField req = {0};
     std::strncpy(req.BrokerID, config_.broker_id.c_str(), sizeof(req.BrokerID) - 1);
     std::strncpy(req.InvestorID, config_.user_id.c_str(), sizeof(req.InvestorID) - 1);
+    debug_log(config_, "query position");
     int ret = td_api_->ReqQryInvestorPosition(&req, req_id_++);
     if (ret != 0 && log_error) {
         publish_error(GatewayErrorCode::ApiError, "ReqQryInvestorPosition failed: " + std::to_string(ret));
@@ -287,6 +316,7 @@ bool CtpGatewayAdapter::query_open_orders_internal(bool log_error) {
     CThostFtdcQryOrderField req = {0};
     std::strncpy(req.BrokerID, config_.broker_id.c_str(), sizeof(req.BrokerID) - 1);
     std::strncpy(req.InvestorID, config_.user_id.c_str(), sizeof(req.InvestorID) - 1);
+    debug_log(config_, "query open orders");
     int ret = td_api_->ReqQryOrder(&req, req_id_++);
     if (ret != 0 && log_error) {
         publish_error(GatewayErrorCode::ApiError, "ReqQryOrder failed: " + std::to_string(ret));
@@ -325,6 +355,7 @@ int CtpGatewayAdapter::parse_time_hhmmss(const std::string& time_str) {
 }
 
 void CtpGatewayAdapter::TraderSpi::OnFrontConnected() {
+    debug_log(parent_->config_, "front connected, send login");
     parent_->publish_status('1', "Connected");
     CThostFtdcReqUserLoginField req = {0};
     std::strncpy(req.BrokerID, parent_->config_.broker_id.c_str(), sizeof(req.BrokerID) - 1);
@@ -334,6 +365,7 @@ void CtpGatewayAdapter::TraderSpi::OnFrontConnected() {
 }
 
 void CtpGatewayAdapter::TraderSpi::OnFrontDisconnected(int nReason) {
+    debug_log(parent_->config_, "front disconnected reason=" + std::to_string(nReason));
     (void)nReason;
     parent_->logged_in_.store(false, std::memory_order_release);
     parent_->ready_.store(false, std::memory_order_release);
@@ -364,6 +396,8 @@ void CtpGatewayAdapter::TraderSpi::OnRspUserLogin(CThostFtdcRspUserLoginField* p
         parent_->ctp_trading_day_ = static_cast<uint32_t>(std::atoi(pRspUserLogin->TradingDay));
     }
     parent_->logged_in_.store(true, std::memory_order_release);
+    debug_log(parent_->config_, "login ok front_id=" + std::to_string(front_id_) +
+                                    " session_id=" + std::to_string(session_id_));
     std::string msg = "MaxOrderRef:" + std::string(pRspUserLogin->MaxOrderRef);
     parent_->publish_status('3', msg.c_str());
 
@@ -408,6 +442,12 @@ void CtpGatewayAdapter::TraderSpi::OnRtnOrder(CThostFtdcOrderField* pOrder) {
     else rtn.status = 'a';
     std::strncpy(rtn.status_msg, pOrder->StatusMsg, sizeof(rtn.status_msg) - 1);
     std::strncpy(rtn.order_sys_id, pOrder->OrderSysID, sizeof(rtn.order_sys_id) - 1);
+    debug_log(parent_->config_, "order rtn symbol=" + std::string(rtn.symbol) +
+                                    " order_ref=" + rtn.order_ref +
+                                    " order_sys_id=" + rtn.order_sys_id +
+                                    " status=" + std::string(1, rtn.status) +
+                                    " traded=" + std::to_string(rtn.volume_traded) +
+                                    "/" + std::to_string(rtn.volume_total));
     parent_->publish_order_rtn(rtn);
 }
 
@@ -427,6 +467,11 @@ void CtpGatewayAdapter::TraderSpi::OnRtnTrade(CThostFtdcTradeField* pTrade) {
     std::strncpy(rtn.trade_id, pTrade->TradeID, sizeof(rtn.trade_id) - 1);
     std::strncpy(rtn.order_ref, pTrade->OrderRef, sizeof(rtn.order_ref) - 1);
     std::strncpy(rtn.order_sys_id, pTrade->OrderSysID, sizeof(rtn.order_sys_id) - 1);
+    debug_log(parent_->config_, "trade rtn symbol=" + std::string(rtn.symbol) +
+                                    " trade_id=" + rtn.trade_id +
+                                    " order_ref=" + rtn.order_ref +
+                                    " price=" + std::to_string(rtn.price) +
+                                    " volume=" + std::to_string(rtn.volume));
     parent_->publish_trade_rtn(rtn);
 }
 

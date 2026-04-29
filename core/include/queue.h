@@ -57,7 +57,7 @@ public:
         if (slot.sequence.load(std::memory_order_acquire) != ticket + 1) {
             return false;
         }
-        item = slot.data;
+        item = std::move(slot.data);
         slot.sequence.store(ticket + capacity_, std::memory_order_release);
         head_local_ = ticket + 1;
         return true;

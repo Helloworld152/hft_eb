@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ctp_gateway_adapter.h"
+#include "gateway_adapter.h"
 #include "gateway_config.h"
 #include "gateway_protocol.h"
 #include "shared_spsc_ring.h"
@@ -38,7 +38,7 @@ private:
     GatewayConfig gateway_config_;
     SharedSpscRing<GatewayCommand> cmd_ring_;
     SharedSpscRing<GatewayEvent> rtn_ring_;
-    std::unique_ptr<CtpGatewayAdapter> adapter_;
+    std::unique_ptr<IGatewayAdapter> adapter_;
     std::atomic<bool> running_{false};
 };
 
