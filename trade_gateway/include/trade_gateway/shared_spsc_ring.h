@@ -84,8 +84,18 @@ public:
             fd_ = -1;
             throw std::runtime_error("ftruncate failed for " + name + ": " + std::strerror(errno));
         }
+        if (!create) {
+            struct stat st {};
+            if (fstat(fd_, &st) != 0) {
+                ::close(fd_);
+                fd_ = -1;
+                throw std::runtime_error("fstat failed for " + name + ": " + std::strerror(errno));
+            }
+            mapped_size_ = static_cast<size_t>(st.st_size);
+        } else {
+            mapped_size_ = map_size;
+        }
 
-        mapped_size_ = map_size;
         base_ = ::mmap(nullptr, mapped_size_, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0);
         if (base_ == MAP_FAILED) {
             ::close(fd_);
@@ -113,6 +123,10 @@ public:
             }
         } else {
             capacity_ = header_->capacity;
+            if (capacity_ == 0) {
+                close();
+                throw std::runtime_error("invalid capacity for shared ring " + name);
+            }
             if (header_->slot_size != sizeof(T)) {
                 close();
                 throw std::runtime_error("slot size mismatch for shared ring " + name);

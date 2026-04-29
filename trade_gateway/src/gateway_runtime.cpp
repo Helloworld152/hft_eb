@@ -82,7 +82,7 @@ void GatewayRuntime::loop() {
             }
         }
 
-        if (now - last_hb_ns >= 1000000000ULL) {
+        if (now - last_hb_ns >= 10000000000ULL) {
             last_hb_ns = now;
             publish_heartbeat_ack();
         }
