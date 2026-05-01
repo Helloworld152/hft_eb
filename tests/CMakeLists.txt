@@ -22,3 +22,11 @@ target_link_libraries(queue_bench PRIVATE Threads::Threads)
 add_executable(mmap_format_test mmap_format_test.cpp)
 target_include_directories(mmap_format_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(mmap_format_test PRIVATE Threads::Threads)
+
+add_executable(function_pointer_bench function_pointer_bench.cpp)
+target_include_directories(function_pointer_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_link_libraries(function_pointer_bench PRIVATE Threads::Threads)
+
+add_executable(rvo_move_bench rvo_move_bench.cpp)
+target_include_directories(rvo_move_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_link_libraries(rvo_move_bench PRIVATE Threads::Threads)
