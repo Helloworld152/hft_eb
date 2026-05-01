@@ -17,6 +17,8 @@ include_directories(${CMAKE_SOURCE_DIR}/../../gateway_ctp/include)
 link_directories(../third_party/ctp/lib)
 link_directories(${CMAKE_SOURCE_DIR}/../bin) # 为了找到 libhft_core.so
 
+find_package(yaml-cpp REQUIRED)
+
 # Source files
 set(SOURCES
     src/main.cpp
@@ -37,16 +39,3 @@ target_link_libraries(hft_reader hft_core pthread)
 # Installation/Output info
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Output dir: ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
-
-# ==========================================
-# External Dependencies
-# ==========================================
-include(FetchContent)
-
-# YAML-CPP
-FetchContent_Declare(
-  yaml-cpp
-  GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
-  GIT_TAG        0.8.0
-)
-FetchContent_MakeAvailable(yaml-cpp)

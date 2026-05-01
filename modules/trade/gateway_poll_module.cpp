@@ -1,8 +1,8 @@
 #include "../../include/framework.h"
 #include "../../core/include/core_state.h"
 #include "../../core/include/order_manager.h"
+#include "../../core/include/shared_spsc_ring.h"
 #include "../../trade_gateway/include/trade_gateway/gateway_protocol.h"
-#include "../../trade_gateway/include/trade_gateway/shared_spsc_ring.h"
 
 #include <cstring>
 #include <iostream>

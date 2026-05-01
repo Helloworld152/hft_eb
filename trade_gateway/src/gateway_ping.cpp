@@ -1,5 +1,5 @@
 #include "../include/trade_gateway/gateway_protocol.h"
-#include "../include/trade_gateway/shared_spsc_ring.h"
+#include "../../core/include/shared_spsc_ring.h"
 
 #include <csignal>
 #include <chrono>

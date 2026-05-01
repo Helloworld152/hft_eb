@@ -5,18 +5,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
-
-include(FetchContent)
-
-# CCAPI (needed by Binance trade plugin)
-FetchContent_Declare(
-  ccapi
-  GIT_REPOSITORY https://github.com/crypto-chassis/ccapi.git
-  GIT_TAG        v7.8.0
-)
-FetchContent_MakeAvailable(ccapi)
-
 # ==========================================
 # 编译优化配置
 # ==========================================
@@ -83,13 +71,12 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
 # Dependencies
 find_package(Threads REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system)
-find_package(OpenSSL REQUIRED)
 find_package(Python3 COMPONENTS Development REQUIRED)
-
-find_path(RAPIDJSON_INCLUDE_DIR rapidjson/document.h)
-if (NOT RAPIDJSON_INCLUDE_DIR)
-  message(FATAL_ERROR "RapidJSON headers not found. Please install rapidjson (include path should contain rapidjson/document.h).")
+find_package(yaml-cpp REQUIRED)
+find_package(nlohmann_json REQUIRED)
+find_library(ZMQ_LIBRARY NAMES zmq)
+if (NOT ZMQ_LIBRARY)
+  message(FATAL_ERROR "ZeroMQ library not found. Please install libzmq3-dev.")
 endif()
 
 # Global Includes
@@ -237,11 +224,11 @@ add_library(mod_gateway_poll SHARED modules/trade/gateway_poll_module.cpp)
 target_include_directories(mod_gateway_poll PRIVATE include core/include trade_gateway/include)
 target_link_libraries(mod_gateway_poll PRIVATE hft_core rt)
 
-# 3.1 编译插件 C-CCAPI: Binance USDT Futures Trade
-add_library(mod_ccapi_binance_usds_trade SHARED modules/trade/ccapi_binance_usds_trade.cpp)
-target_include_directories(mod_ccapi_binance_usds_trade PRIVATE include core/include ${ccapi_SOURCE_DIR}/include ${RAPIDJSON_INCLUDE_DIR})
-target_link_libraries(mod_ccapi_binance_usds_trade PRIVATE hft_core Boost::system OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
-target_compile_definitions(mod_ccapi_binance_usds_trade PRIVATE CCAPI_ENABLE_SERVICE_EXECUTION_MANAGEMENT CCAPI_ENABLE_EXCHANGE_BINANCE_USDS_FUTURES)
+# 3.1 CCAPI Binance USDT Futures Trade plugin is intentionally disabled.
+# It requires CCAPI/RapidJSON/Boost/OpenSSL and should not be built by default.
+# add_library(mod_ccapi_binance_usds_trade SHARED modules/trade/ccapi_binance_usds_trade.cpp)
+# target_include_directories(mod_ccapi_binance_usds_trade PRIVATE include core/include)
+# target_link_libraries(mod_ccapi_binance_usds_trade PRIVATE hft_core Threads::Threads)
 
 # 4. 编译插件 D: Risk Control
 add_library(mod_risk SHARED modules/risk/risk_module.cpp)
@@ -253,10 +240,11 @@ add_library(mod_portfolio SHARED modules/portfolio/portfolio_module.cpp)
 target_include_directories(mod_portfolio PRIVATE include)
 target_link_libraries(mod_portfolio PRIVATE hft_core yaml-cpp)
 
-# 6. 编译插件 F: Monitor (WebSocket + ZMQ)
-add_library(mod_monitor SHARED modules/monitor/monitor_module.cpp)
-target_include_directories(mod_monitor PRIVATE include)
-target_link_libraries(mod_monitor PRIVATE hft_core ixwebsocket nlohmann_json::nlohmann_json zmq -Wl,--no-as-needed pthread -Wl,--as-needed)
+# 6. Monitor plugin is intentionally disabled.
+# It requires IXWebSocket and should not be built by default.
+# add_library(mod_monitor SHARED modules/monitor/monitor_module.cpp)
+# target_include_directories(mod_monitor PRIVATE include)
+# target_link_libraries(mod_monitor PRIVATE hft_core nlohmann_json::nlohmann_json ${ZMQ_LIBRARY})
 
 # 6.1 编译插件 F-2: Signal CSV (EVENT_SIGNAL -> CSV)
 add_library(mod_signal_csv SHARED modules/monitor/signal_csv_module.cpp)
@@ -266,7 +254,7 @@ target_link_libraries(mod_signal_csv PRIVATE hft_core -Wl,--no-as-needed pthread
 # 7. 编译插件 Test Harness (ZMQ 控制)
 add_library(mod_test_harness SHARED modules/test_harness/test_harness_module.cpp)
 target_include_directories(mod_test_harness PRIVATE include core/include)
-target_link_libraries(mod_test_harness PRIVATE hft_core nlohmann_json::nlohmann_json zmq -Wl,--no-as-needed pthread -Wl,--as-needed)
+target_link_libraries(mod_test_harness PRIVATE hft_core nlohmann_json::nlohmann_json ${ZMQ_LIBRARY} -Wl,--no-as-needed pthread -Wl,--as-needed)
 
 # 8.0 编译插件 G-Test: Event Sampler
 add_library(mod_event_sampler SHARED modules/test/event_sampler_module.cpp)
@@ -307,31 +295,3 @@ add_executable(hft_engine src/main.cpp src/engine.cpp)
 target_include_directories(hft_engine PRIVATE include)
 target_link_libraries(hft_engine PRIVATE hft_core dl pthread yaml-cpp)
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
-
-# ==========================================
-# External Dependencies
-# ==========================================
-include(FetchContent)
-
-# YAML-CPP
-FetchContent_Declare(
-  yaml-cpp
-  GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
-  GIT_TAG        0.8.0
-)
-
-# IXWebSocket
-FetchContent_Declare(
-  ixwebsocket
-  GIT_REPOSITORY https://github.com/machinezone/IXWebSocket.git
-  GIT_TAG        v11.4.4
-)
-
-# JSON (nlohmann)
-FetchContent_Declare(
-  json
-  GIT_REPOSITORY https://github.com/nlohmann/json.git
-  GIT_TAG        v3.11.3
-)
-
-FetchContent_MakeAvailable(yaml-cpp ixwebsocket json)

@@ -28,6 +28,8 @@ add_executable(hft_ba_recorder ${BA_SOURCES})
 find_package(Threads REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(OpenSSL REQUIRED)
+find_package(yaml-cpp REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 target_link_libraries(
   hft_ba_recorder
@@ -53,50 +55,11 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Output dir: ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 
 # ==========================================
-# External Dependencies (reuse root build/_deps if available)
+# CCAPI include path
 # ==========================================
-include(FetchContent)
-set(HFT_ROOT_DEPS_DIR "${CMAKE_SOURCE_DIR}/../build/_deps")
-if (EXISTS "${HFT_ROOT_DEPS_DIR}/yaml-cpp-src" AND
-    EXISTS "${HFT_ROOT_DEPS_DIR}/json-src")
-
-  add_subdirectory(${HFT_ROOT_DEPS_DIR}/yaml-cpp-src ${CMAKE_BINARY_DIR}/yaml-cpp-build)
-  add_subdirectory(${HFT_ROOT_DEPS_DIR}/json-src ${CMAKE_BINARY_DIR}/json-build)
-
-else()
-  # YAML-CPP
-  FetchContent_Declare(
-    yaml-cpp
-    GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
-    GIT_TAG        0.8.0
-  )
-
-  # JSON (nlohmann)
-  FetchContent_Declare(
-    json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG        v3.11.3
-  )
-
-  FetchContent_MakeAvailable(yaml-cpp json)
-endif()
-
-# ==========================================
-# CCAPI (优先使用本项目 build/_deps)
-# ==========================================
-set(CCAPI_LOCAL_DIR "${CMAKE_SOURCE_DIR}/build/_deps/ccapi-src")
-if (EXISTS ${CCAPI_LOCAL_DIR})
-  message(STATUS "Using local CCAPI from main project: ${CCAPI_LOCAL_DIR}")
-  set(ccapi_SOURCE_DIR ${CCAPI_LOCAL_DIR})
-else()
-  # 回退到 FetchContent
-  message(STATUS "Local CCAPI not found, fetching from GitHub...")
-  FetchContent_Declare(
-    ccapi
-    GIT_REPOSITORY https://github.com/crypto-chassis/ccapi.git
-    GIT_TAG        v7.8.0
-  )
-  FetchContent_MakeAvailable(ccapi)
+find_path(CCAPI_INCLUDE_DIR ccapi_cpp/ccapi_session.h)
+if (NOT CCAPI_INCLUDE_DIR)
+  message(FATAL_ERROR "CCAPI headers not found. Install CCAPI system-wide or pass -DCCAPI_INCLUDE_DIR=/path/to/ccapi/include.")
 endif()
 
 # RapidJSON (system provided)
@@ -108,6 +71,6 @@ endif()
 target_include_directories(
   hft_ba_recorder
   PRIVATE
-  ${ccapi_SOURCE_DIR}/include
+  ${CCAPI_INCLUDE_DIR}
   ${RAPIDJSON_INCLUDE_DIR}
 )

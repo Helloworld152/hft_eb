@@ -1,6 +1,6 @@
 #include "protocol.h"
+#include "mmap_util.h"
 #include <iostream>
-#include <fstream>
 #include <vector>
 #include <string>
 #include <unordered_map>
@@ -130,25 +130,30 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::string file_path = argv[1];
+    std::string base_path = argv[1];
+    const std::string dat_suffix = ".dat";
+    if (base_path.size() > dat_suffix.size() &&
+        base_path.compare(base_path.size() - dat_suffix.size(), dat_suffix.size(), dat_suffix) == 0) {
+        base_path.resize(base_path.size() - dat_suffix.size());
+    }
+
     int interval = 1;
     if (argc > 2) interval = std::stoi(argv[2]);
 
-    std::ifstream ifs(file_path, std::ios::binary);
-    if (!ifs) {
-        std::cerr << "Error: Cannot open " << file_path << std::endl;
+    try {
+        MmapReader<TickRecord> reader(base_path);
+        std::cout << "Symbol,Time,Open,High,Low,Close,Volume,Turnover" << std::endl;
+
+        BarGenerator bg(interval);
+        TickRecord rec;
+        while (reader.read(rec)) {
+            bg.process_tick(rec);
+        }
+        bg.finish_all();
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     }
-
-    std::cout << "Symbol,Time,Open,High,Low,Close,Volume,Turnover" << std::endl;
-
-    BarGenerator bg(interval);
-    TickRecord rec;
-    
-    while (ifs.read(reinterpret_cast<char*>(&rec), sizeof(TickRecord))) {
-        bg.process_tick(rec);
-    }
-    bg.finish_all();
 
     return 0;
 }

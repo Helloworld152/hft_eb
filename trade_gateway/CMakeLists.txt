@@ -8,23 +8,12 @@ endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 
 get_filename_component(HFT_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 
 find_package(Threads REQUIRED)
 find_package(yaml-cpp REQUIRED)
-
-if(NOT TARGET hft_core)
-    add_library(hft_core SHARED
-        ${HFT_REPO_ROOT}/core/src/symbol_manager.cpp
-        ${HFT_REPO_ROOT}/core/src/market_snapshot.cpp
-        ${HFT_REPO_ROOT}/core/src/tick_window_snapshot.cpp
-        ${HFT_REPO_ROOT}/core/src/core_state.cpp)
-    target_include_directories(hft_core
-        PUBLIC
-            ${HFT_REPO_ROOT}/core/include)
-    target_link_libraries(hft_core PRIVATE rt)
-endif()
 
 add_executable(hft_trade_gateway
     src/main.cpp
@@ -35,6 +24,10 @@ add_executable(hft_trade_gateway
 
 add_executable(hft_trade_gateway_ping
     src/gateway_ping.cpp)
+
+set_target_properties(hft_trade_gateway PROPERTIES
+    BUILD_RPATH "${HFT_REPO_ROOT}/bin"
+    INSTALL_RPATH "${HFT_REPO_ROOT}/bin")
 
 target_include_directories(hft_trade_gateway
     PRIVATE
@@ -49,6 +42,7 @@ target_include_directories(hft_trade_gateway_ping
 
 target_link_directories(hft_trade_gateway
     PRIVATE
+        ${HFT_REPO_ROOT}/bin
         ${HFT_REPO_ROOT}/third_party/ctp/lib)
 
 target_link_libraries(hft_trade_gateway
