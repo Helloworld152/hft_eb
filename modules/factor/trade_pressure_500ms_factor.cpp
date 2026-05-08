@@ -1,7 +1,6 @@
 #include "../../include/factor/factor_node.h"
 
 #include <cstdlib>
-#include <iostream>
 
 namespace {
 
@@ -86,8 +85,7 @@ public:
         last_mid_ = current_mid;
 
         if (debug_) {
-            std::cout << "[TradePressure500msFactor] value=" << last_value_
-                      << " signed_volume=" << signed_volume_ << std::endl;
+            LOG_DEBUG("[TradePressure500msFactor] value={} signed_volume={}", last_value_, signed_volume_);
         }
         return last_value_;
     }

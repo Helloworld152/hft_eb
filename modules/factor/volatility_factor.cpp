@@ -2,7 +2,6 @@
 #include <vector>
 #include <cstdlib>
 #include <cmath>
-#include <iostream>
 
 class VolatilityFactor : public IFactorNode {
 public:
@@ -59,7 +58,7 @@ public:
         }
 
         if (debug_) {
-            std::cout << "[VolatilityFactor] value=" << last_value_ << " window=" << window_ << std::endl;
+            LOG_DEBUG("[VolatilityFactor] value={} window={}", last_value_, window_);
         }
         return last_value_;
     }

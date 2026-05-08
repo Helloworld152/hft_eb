@@ -1,11 +1,11 @@
 #include "Recorder.h"
 #include "mmap_util.h"
 #include "symbol_manager.h"
+#include "../../include/logging.h"
 #include <yaml-cpp/yaml.h>
 #include <chrono>
 #include <cstring>
 #include <filesystem>
-#include <iostream>
 
 namespace fs = std::filesystem;
 
@@ -57,9 +57,9 @@ void TickRecorder::start() {
         try {
             shm_impl_ = std::make_unique<ShmMarketSnapshot>(shm_path_, true);
             MarketSnapshot::set_instance(shm_impl_.get());
-            std::cout << "[Recorder] SHM Snapshot initialized at: " << shm_path_ << std::endl;
+            LOG_INFO("[Recorder] SHM Snapshot initialized at: {}", shm_path_);
         } catch (const std::exception& e) {
-            std::cerr << "[Recorder] Failed to init SHM: " << e.what() << std::endl;
+            LOG_ERROR("[Recorder] Failed to init SHM: {}", e.what());
         }
     }
 
@@ -67,7 +67,7 @@ void TickRecorder::start() {
 
     md_api_ = CThostFtdcMdApi::CreateFtdcMdApi("./log/");
     if (!md_api_) {
-        std::cerr << "FATAL: Failed to create CTP API!" << std::endl;
+        LOG_ERROR("FATAL: Failed to create CTP API!");
         return;
     }
 
@@ -75,7 +75,7 @@ void TickRecorder::start() {
     md_api_->RegisterFront(const_cast<char*>(md_front_.c_str()));
     md_api_->Init();
 
-    std::cout << "[Recorder] Running independently (Mmap Mode). Output: " << output_path_ << std::endl;
+    LOG_INFO("[Recorder] Running independently (Mmap Mode). Output: {}", output_path_);
 }
 
 void TickRecorder::stop() {
@@ -112,7 +112,7 @@ bool TickRecorder::is_in_time_range() const {
 }
 
 void TickRecorder::OnFrontConnected() {
-    std::cout << "[Recorder] Front connected. Logging in..." << std::endl;
+    LOG_INFO("[Recorder] Front connected. Logging in...");
     CThostFtdcReqUserLoginField req = {0};
     strncpy(req.BrokerID, broker_id_.c_str(), sizeof(req.BrokerID) - 1);
     strncpy(req.UserID, user_id_.c_str(), sizeof(req.UserID) - 1);
@@ -130,15 +130,16 @@ void TickRecorder::OnRspUserLogin(
 
     if (pRspInfo && pRspInfo->ErrorID == 0) {
         std::string tday = pRspUserLogin->TradingDay;
-        std::cout << "[Recorder] Login Success. Exchange TradingDay: " << tday
-                  << " | Using Config TradingDay: " << trading_day_int_ << std::endl;
+        LOG_INFO("[Recorder] Login Success. Exchange TradingDay: {} | Using Config TradingDay: {}",
+                 tday,
+                 trading_day_int_);
 
         std::vector<char*> subs;
         for (auto& s : symbols_) {
             subs.push_back(const_cast<char*>(s.c_str()));
         }
         md_api_->SubscribeMarketData(subs.data(), subs.size());
-        std::cout << "[Recorder] Login Success. Day: " << tday << std::endl;
+        LOG_INFO("[Recorder] Login Success. Day: {}", tday);
     }
 }
 
@@ -308,17 +309,17 @@ void TickRecorder::save_to_file(const TickRecord& rec) {
 
         std::string base_path = output_path_ + "/market_data_" + date_str + file_suffix_;
 
-        std::cout << "[Recorder] Output File: " << base_path << std::endl;
-        std::cout << "[Recorder] Initial Capacity: " << initial_capacity_ << " records (~"
-                  << (initial_capacity_ * sizeof(TickRecord) / (1024.0 * 1024.0 * 1024.0))
-                  << " GB)" << std::endl;
+        LOG_INFO("[Recorder] Output File: {}", base_path);
+        LOG_INFO("[Recorder] Initial Capacity: {} records (~{} GB)",
+                 initial_capacity_,
+                 (initial_capacity_ * sizeof(TickRecord) / (1024.0 * 1024.0 * 1024.0)));
 
         global_ctx_->writer = std::make_unique<MmapWriter<TickRecord>>(base_path, initial_capacity_);
     }
 
     if (global_ctx_->writer) {
         if (!global_ctx_->writer->write(rec)) {
-            std::cerr << "[Recorder] WARN: Mmap buffer full!" << std::endl;
+            LOG_WARN("[Recorder] Mmap buffer full!");
         }
     }
 }

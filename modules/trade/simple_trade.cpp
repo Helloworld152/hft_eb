@@ -1,5 +1,4 @@
 #include "../../include/framework.h"
-#include <iostream>
 #include <string>
 
 class SimpleTradeModule : public IModule {
@@ -14,7 +13,7 @@ public:
             id_ = "SimpleTrade";
         }
 
-        std::cout << "[" << id_ << "] Initialized. Subscribing to EVENT_ORDER_REQ..." << std::endl;
+        LOG_INFO("[{}] Initialized. Subscribing to EVENT_ORDER_REQ...", id_);
 
         // 订阅报单请求事件
         bus_->subscribe(EVENT_ORDER_REQ, [this](void* d) {
@@ -23,12 +22,12 @@ public:
     }
 
     void onOrder(OrderReq* req) {
-        std::cout << "[" << id_ << "] ORDER RECEIVED >> "
-                  << "Symbol: " << req->symbol << " | "
-                  << "Dir: " << req->direction << " | "
-                  << "Price: " << req->price << " | "
-                  << "Vol: " << req->volume 
-                  << std::endl;
+        LOG_INFO("[{}] ORDER RECEIVED >> Symbol: {} | Dir: {} | Price: {} | Vol: {}",
+                 id_,
+                 req->symbol,
+                 req->direction,
+                 req->price,
+                 req->volume);
         
         // 模拟报单确认逻辑（此处仅打印）
         // 在真实场景中，这里会连接柜台API发送报单

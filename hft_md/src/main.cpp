@@ -1,4 +1,5 @@
 #include "Recorder.h"
+#include "../../include/logging.h"
 #include <iostream>
 #include <csignal>
 #include <atomic>
@@ -11,7 +12,7 @@ static std::atomic<bool> g_shutdown(false);
 static TickRecorder* g_recorder = nullptr;
 
 void signal_handler(int signum) {
-    std::cout << "\n[System] Caught signal " << signum << ", shutting down..." << std::endl;
+    (void)signum;
     g_shutdown = true;
     if (g_recorder) {
         g_recorder->stop();
@@ -23,13 +24,9 @@ int main(int argc, char* argv[]) {
     if (argc > 1) {
         config_path = argv[1];
     }
-
-    std::cout << "========================================" << std::endl;
-    std::cout << "  OmniQuant HFT Market Data Recorder    " << std::endl;
-    std::cout << "  Config: " << config_path << std::endl;
-    std::cout << "========================================" << std::endl;
     
     try {
+        hft::logging::init_logging_from_yaml_file(config_path, "hft_recorder");
         // 注册信号处理
         std::signal(SIGINT, signal_handler);
         std::signal(SIGTERM, signal_handler);
@@ -39,23 +36,28 @@ int main(int argc, char* argv[]) {
         g_recorder = recorder.get();
         recorder->start();
 
-        std::cout << "Recording... Ctrl+C or out-of-range to shutdown." << std::endl;
+        LOG_INFO("========================================");
+        LOG_INFO("OmniQuant HFT Market Data Recorder");
+        LOG_INFO("Config: {}", config_path);
+        LOG_INFO("========================================");
+        LOG_INFO("Recording... Ctrl+C or out-of-range to shutdown.");
 
         while (!g_shutdown) {
             if (!recorder->is_in_time_range()) {
-                std::cout << "[System] Current time is out of range, scheduled shutdown..." << std::endl;
+                LOG_INFO("[System] Current time is out of range, scheduled shutdown...");
                 g_shutdown = true;
                 break;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
 
-        std::cout << "Stopping recorder..." << std::endl;
+        LOG_INFO("Stopping recorder...");
         recorder->stop();
         g_recorder = nullptr;
-        std::cout << "Done." << std::endl;
+        LOG_INFO("Done.");
+        hft::logging::shutdown_logging();
     } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
+        LOG_ERROR("Error: {}", e.what());
         return 1;
     }
     

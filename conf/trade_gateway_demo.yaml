@@ -2,6 +2,16 @@ gateway_id: "demo_ctp_gw"
 account_id: "DEMO"
 symbols_file: "conf/symbols.txt"
 
+logging:
+  level: "debug"
+  dir: "logs"
+  file_name: "hft_trade_gateway"
+  console: true
+  file: true
+  max_size_mb: 100
+  max_files: 10
+  flush_on: "warn"
+
 cmd_shm: "/cmd_ring_demo_ctp_gw"
 rtn_shm: "/rtn_ring_demo_ctp_gw"
 ring_capacity: 4096
@@ -11,7 +21,7 @@ debug: true
 
 adapter:
   type: "ctp"
-  td_front: "tcp://182.254.243.31:30001"
+  td_front: "tcp://182.254.243.31:40001"
   broker_id: "9999"
   user_id: "247060"
   password: "RY20000219*"

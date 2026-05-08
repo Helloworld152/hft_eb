@@ -6,6 +6,7 @@
 #include <functional>  // 保留用于兼容接口
 #include <iostream>
 #include <array>
+#include "logging.h"
 #include "static_delegate.h"
 #include "../core/include/protocol.h" // 引入 TickRecord 定义
 

@@ -1,7 +1,6 @@
 #include "../../include/framework.h"
 #include "../../core/include/symbol_manager.h"
 #include <Python.h>
-#include <iostream>
 #include <unordered_set>
 #include <vector>
 #include <sstream>
@@ -16,7 +15,7 @@ void ensure_python_initialized() {
         Py_Initialize();
         PyEval_InitThreads();
         PyEval_SaveThread();
-        std::cout << "[PyStrategy] Python runtime initialized." << std::endl;
+        LOG_INFO("[PyStrategy] Python runtime initialized.");
     });
 }
 
@@ -72,7 +71,7 @@ public:
 
         if (!init_python_strategy(config)) {
             enabled_ = false;
-            std::cerr << "[PyStrategy] Failed to initialize python strategy. Disabled." << std::endl;
+            LOG_ERROR("[PyStrategy] Failed to initialize python strategy. Disabled.");
         }
 
         bus_->subscribe(EVENT_MARKET_DATA, [this](void* d) {
@@ -85,9 +84,11 @@ public:
             });
         }
 
-        std::cout << "[PyStrategy] Initialized. module=" << py_module_
-                  << " class=" << py_class_ << " on_tick=" << (py_on_tick_ ? "yes" : "no")
-                  << " on_kline=" << (py_on_kline_ ? "yes" : "no") << std::endl;
+        LOG_INFO("[PyStrategy] Initialized. module={} class={} on_tick={} on_kline={}",
+                 py_module_,
+                 py_class_,
+                 py_on_tick_ ? "yes" : "no",
+                 py_on_kline_ ? "yes" : "no");
     }
 
     void stop() override {
@@ -164,7 +165,7 @@ private:
             return false;
         }
         if (!PyType_Check(cls)) {
-            std::cerr << "[PyStrategy] py_class must be a class (type), not a plain function." << std::endl;
+            LOG_ERROR("[PyStrategy] py_class must be a class (type), not a plain function.");
             Py_DECREF(cls);
             Py_DECREF(module);
             PyGILState_Release(gstate);
@@ -241,7 +242,7 @@ private:
 
         PyGILState_Release(gstate);
         if (py_on_tick_ == nullptr && py_on_kline_ == nullptr) {
-            std::cerr << "[PyStrategy] Strategy must define on_tick and/or on_kline." << std::endl;
+            LOG_ERROR("[PyStrategy] Strategy must define on_tick and/or on_kline.");
             return false;
         }
         return true;
@@ -347,7 +348,7 @@ private:
         if (error_policy_ == "ignore") return;
         if (error_policy_ == "disable") {
             enabled_ = false;
-            std::cerr << "[PyStrategy] Disabled after error." << std::endl;
+            LOG_ERROR("[PyStrategy] Disabled after error.");
             return;
         }
         if (error_policy_ == "stop") {

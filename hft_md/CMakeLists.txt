@@ -1,41 +1,29 @@
-cmake_minimum_required(VERSION 3.10)
-project(hft_md)
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
-
-# Include paths
-include_directories(include)
-include_directories(../core/include)
-include_directories(../third_party/ctp/include)
-include_directories(${CMAKE_SOURCE_DIR}/../../gateway_ctp/include)
-
-# Library paths
-link_directories(../third_party/ctp/lib)
-link_directories(${CMAKE_SOURCE_DIR}/../bin) # 为了找到 libhft_core.so
-
-find_package(yaml-cpp REQUIRED)
-
-# Source files
-set(SOURCES
+add_executable(hft_recorder
     src/main.cpp
-    src/Recorder.cpp
-)
+    src/Recorder.cpp)
 
-# Executable
-add_executable(hft_recorder ${SOURCES})
+target_include_directories(hft_recorder
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/third_party/ctp/include)
 
-# Links
-# 链接 hft_core 以获得 MarketSnapshot 和 SymbolManager 支持
-target_link_libraries(hft_recorder hft_core thostmduserapi_se pthread yaml-cpp)
+target_link_directories(hft_recorder
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/third_party/ctp/lib)
 
-# Tool: Data Reader
+target_link_libraries(hft_recorder
+    PRIVATE
+        hft_core
+        hft_logging
+        thostmduserapi_se
+        pthread
+        yaml-cpp)
+
 add_executable(hft_reader tools/read_dat.cpp)
-target_link_libraries(hft_reader hft_core pthread)
-
-# Installation/Output info
-message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
-message(STATUS "Output dir: ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+target_include_directories(hft_reader
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(hft_reader PRIVATE hft_core pthread)

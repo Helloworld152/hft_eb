@@ -2,7 +2,6 @@
 #include "../../core/include/core_state.h"
 #include "../../core/include/symbol_manager.h"
 #include <cstring>
-#include <iostream>
 
 class StrategyModule : public IModule {
 public:
@@ -23,7 +22,7 @@ public:
         }
         sell_thresh_ = std::stod(config.at("sell_thresh"));
         
-        std::cout << "[Strategy] Range: [" << buy_thresh_ << ", " << sell_thresh_ << "]" << std::endl;
+        LOG_INFO("[Strategy] Range: [{}, {}]", buy_thresh_, sell_thresh_);
 
         // 订阅行情
         bus_->subscribe(EVENT_MARKET_DATA, [this](void* d) {
@@ -50,12 +49,12 @@ public:
             // 1. 如果有空单，先平空
             int short_pos = current_pos_.short_td + current_pos_.short_yd;
             if (short_pos > 0) {
-                std::cout << "[Strategy] BUY to CLOSE SHORT. Price: " << md->last_price << std::endl;
+                LOG_INFO("[Strategy] BUY to CLOSE SHORT. Price: {}", md->last_price);
                 sendOrder(md->symbol, 'B', 'C', md->last_price); // Close Short
             }
             // 2. 如果没空单，且没多单，才开多 (简化为只能持有一个方向)
             else if (current_pos_.long_td + current_pos_.long_yd == 0) {
-                std::cout << "[Strategy] BUY to OPEN LONG. Price: " << md->last_price << std::endl;
+                LOG_INFO("[Strategy] BUY to OPEN LONG. Price: {}", md->last_price);
                 sendOrder(md->symbol, 'B', 'O', md->last_price); // Open Long
             }
         } 
@@ -65,12 +64,12 @@ public:
             // 1. 如果有多单，先平多
             int long_pos = current_pos_.long_td + current_pos_.long_yd;
             if (long_pos > 0) {
-                std::cout << "[Strategy] SELL to CLOSE LONG. Price: " << md->last_price << std::endl;
+                LOG_INFO("[Strategy] SELL to CLOSE LONG. Price: {}", md->last_price);
                 sendOrder(md->symbol, 'S', 'C', md->last_price); // Close Long
             }
             // 2. 如果没多单，且没空单，才开空
             else if (current_pos_.short_td + current_pos_.short_yd == 0) {
-                std::cout << "[Strategy] SELL to OPEN SHORT. Price: " << md->last_price << std::endl;
+                LOG_INFO("[Strategy] SELL to OPEN SHORT. Price: {}", md->last_price);
                 sendOrder(md->symbol, 'S', 'O', md->last_price); // Open Short
             }
         }

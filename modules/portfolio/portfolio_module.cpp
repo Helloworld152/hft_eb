@@ -7,7 +7,6 @@
 #include <string>
 #include <mutex>
 #include <chrono>
-#include <iostream>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -36,15 +35,16 @@ public:
         bus_ = bus;
         parse_config(config);
 
-        std::cout << "[Portfolio] Initialized. default_account=" << default_account_
-                  << " signal_scale=" << signal_scale_
-                  << " min_signal_threshold=" << min_signal_threshold_
-                  << " max_abs_pos=" << max_abs_pos_
-                  << " max_order_size=" << max_order_size_
-                  << " max_notional=" << max_notional_
-                  << " prefer_close_first=" << (prefer_close_first_ ? "true" : "false")
-                  << " signal_ttl_ms=" << signal_ttl_ms_
-                  << " margin_rate=" << margin_rate_ << std::endl;
+        LOG_INFO("[Portfolio] Initialized. default_account={} signal_scale={} min_signal_threshold={} max_abs_pos={} max_order_size={} max_notional={} prefer_close_first={} signal_ttl_ms={} margin_rate={}",
+                 default_account_,
+                 signal_scale_,
+                 min_signal_threshold_,
+                 max_abs_pos_,
+                 max_order_size_,
+                 max_notional_,
+                 prefer_close_first_ ? "true" : "false",
+                 signal_ttl_ms_,
+                 margin_rate_);
 
         bus_->subscribe(EVENT_SIGNAL, [this](void* d) {
             this->onSignal(static_cast<SignalRecord*>(d));
@@ -99,7 +99,7 @@ private:
                 }
             }
         } catch (const YAML::Exception& e) {
-            std::cerr << "[Portfolio] YAML parse error: " << e.what() << std::endl;
+            LOG_ERROR("[Portfolio] YAML parse error: {}", e.what());
         }
     }
 
@@ -108,7 +108,7 @@ private:
         uint64_t symbol_id = SymbolManager::instance().get_id(sig->symbol);
         if (symbol_id == 0) {
             if (debug_) {
-                std::cerr << "[Portfolio] Unknown symbol: " << sig->symbol << std::endl;
+                LOG_WARN("[Portfolio] Unknown symbol: {}", sig->symbol);
             }
             return;
         }
@@ -259,9 +259,12 @@ private:
         req.volume = std::abs(target_delta);
 
         if (debug_) {
-            std::cout << "[Portfolio] OrderReq symbol=" << req.symbol
-                      << " dir=" << req.direction << " off=" << req.offset_flag
-                      << " vol=" << req.volume << " acc=" << req.account_id << std::endl;
+            LOG_DEBUG("[Portfolio] OrderReq symbol={} dir={} off={} vol={} acc={}",
+                      req.symbol,
+                      req.direction,
+                      req.offset_flag,
+                      req.volume,
+                      req.account_id);
         }
 
         bus_->publish(EVENT_ORDER_REQ, &req);

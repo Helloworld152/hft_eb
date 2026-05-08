@@ -2,7 +2,6 @@
 
 #include <cmath>
 #include <cstdlib>
-#include <iostream>
 #include <limits>
 
 namespace {
@@ -82,8 +81,7 @@ public:
         }
 
         if (debug_) {
-            std::cout << "[MidReturn500msFactor] value=" << last_value_
-                      << " mid=" << mid << std::endl;
+            LOG_DEBUG("[MidReturn500msFactor] value={} mid={}", last_value_, mid);
         }
         return last_value_;
     }

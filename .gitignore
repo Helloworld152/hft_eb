@@ -10,6 +10,7 @@ target/
 nohup.out
 
 *.lock
+*.log
 .worktrees/
 
 __pycache__/

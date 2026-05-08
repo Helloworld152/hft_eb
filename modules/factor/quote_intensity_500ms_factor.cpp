@@ -2,7 +2,6 @@
 
 #include <cmath>
 #include <cstdlib>
-#include <iostream>
 
 namespace {
 
@@ -78,8 +77,7 @@ public:
         }
 
         if (debug_) {
-            std::cout << "[QuoteIntensity500msFactor] value=" << last_value_
-                      << " updates=" << quote_updates_ << std::endl;
+            LOG_DEBUG("[QuoteIntensity500msFactor] value={} updates={}", last_value_, quote_updates_);
         }
         return last_value_;
     }

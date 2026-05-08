@@ -13,10 +13,28 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 get_filename_component(HFT_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 
 find_package(Threads REQUIRED)
-find_package(yaml-cpp REQUIRED)
+if(NOT TARGET yaml-cpp)
+    set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+    set(YAML_BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+    add_subdirectory(${HFT_REPO_ROOT}/third_party/yaml-cpp
+                     ${CMAKE_CURRENT_BINARY_DIR}/yaml-cpp-build)
+endif()
+if(NOT TARGET spdlog::spdlog)
+    if(EXISTS ${HFT_REPO_ROOT}/third_party/spdlog/CMakeLists.txt)
+        set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+        set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        set(SPDLOG_BUILD_BENCH OFF CACHE BOOL "" FORCE)
+        add_subdirectory(${HFT_REPO_ROOT}/third_party/spdlog
+                         ${CMAKE_CURRENT_BINARY_DIR}/spdlog-build)
+    else()
+        message(FATAL_ERROR "third_party/spdlog is required. Please init/update submodules.")
+    endif()
+endif()
 
 add_executable(hft_trade_gateway
     src/main.cpp
+    ../src/logging.cpp
     src/gateway_adapter_factory.cpp
     src/gateway_runtime.cpp
     src/gateway_config.cpp
@@ -32,6 +50,7 @@ set_target_properties(hft_trade_gateway PROPERTIES
 target_include_directories(hft_trade_gateway
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${HFT_REPO_ROOT}/include
         ${HFT_REPO_ROOT}/core/include
         ${HFT_REPO_ROOT}/third_party/ctp/include)
 
@@ -48,6 +67,7 @@ target_link_directories(hft_trade_gateway
 target_link_libraries(hft_trade_gateway
     PRIVATE
         hft_core
+        spdlog::spdlog
         Threads::Threads
         yaml-cpp
         rt

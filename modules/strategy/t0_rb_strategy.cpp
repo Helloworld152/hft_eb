@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include <iostream>
 #include <limits>
 #include <string>
 
@@ -63,11 +62,12 @@ public:
         bus_->subscribe(EVENT_SIGNAL,
                         StaticDelegate<void(void*)>::bind<T0RbStrategyModule, &T0RbStrategyModule::on_signal_event>(this));
 
-        std::cout << "[T0RbStrategy] Initialized. symbol=" << symbol_
-                  << " signal_name=" << signal_name_
-                  << " decision_interval_ms=" << decision_interval_ms_
-                  << " trade_side=" << trade_side_
-                  << " max_abs_pos=" << max_abs_pos_ << std::endl;
+        LOG_INFO("[T0RbStrategy] Initialized. symbol={} signal_name={} decision_interval_ms={} trade_side={} max_abs_pos={}",
+                 symbol_,
+                 signal_name_,
+                 decision_interval_ms_,
+                 trade_side_,
+                 max_abs_pos_);
     }
 
 private:
@@ -194,22 +194,24 @@ private:
         bus_->publish(EVENT_ORDER_REQ, &req);
 
         if (debug_) {
-            std::cout << "[T0RbStrategy] reason=" << reason
-                      << " alpha=" << latest_alpha_
-                      << " symbol=" << symbol_
-                      << " direction=" << direction
-                      << " offset=" << offset_flag
-                      << " volume=" << volume
-                      << " price=" << price
-                      << " ts=" << last_tick_.update_time << std::endl;
+            LOG_DEBUG("[T0RbStrategy] reason={} alpha={} symbol={} direction={} offset={} volume={} price={} ts={}",
+                      reason,
+                      latest_alpha_,
+                      symbol_,
+                      direction,
+                      offset_flag,
+                      volume,
+                      price,
+                      last_tick_.update_time);
         }
     }
 
     void log_state(const char* reason) const {
-        std::cout << "[T0RbStrategy] reason=" << reason
-                  << " alpha=" << latest_alpha_
-                  << " symbol=" << symbol_
-                  << " ts=" << last_tick_.update_time << std::endl;
+        LOG_DEBUG("[T0RbStrategy] reason={} alpha={} symbol={} ts={}",
+                  reason,
+                  latest_alpha_,
+                  symbol_,
+                  last_tick_.update_time);
     }
 
     bool allows_long() const {

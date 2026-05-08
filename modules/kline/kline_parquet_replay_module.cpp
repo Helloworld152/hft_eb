@@ -12,7 +12,6 @@
 #include <cstdint>
 #include <ctime>
 #include <cstring>
-#include <iostream>
 #include <limits>
 #include <string>
 #include <thread>
@@ -59,7 +58,7 @@ public:
             end_date_ = std::stoi(config.at("end_date"));
         }
 
-        std::cout << "[KlineParquetReplay] Initialized. File: " << data_file_ << "\n";
+        LOG_INFO("[KlineParquetReplay] Initialized. File: {}", data_file_);
     }
 
     void start() override {
@@ -70,7 +69,7 @@ public:
     void stop() override {
         running_ = false;
         if (thread_.joinable()) thread_.join();
-        std::cout << "[KlineParquetReplay] Stopped. Total bars: " << bar_count_ << "\n";
+        LOG_INFO("[KlineParquetReplay] Stopped. Total bars: {}", bar_count_);
     }
 
 private:
@@ -90,14 +89,13 @@ private:
 
     bool load_parquet(std::vector<ParquetKlineRow>& out_rows) {
         if (data_file_.empty()) {
-            std::cerr << "[KlineParquetReplay] data_file is empty.\n";
+            LOG_ERROR("[KlineParquetReplay] data_file is empty.");
             return false;
         }
 
         auto maybe_file = arrow::io::ReadableFile::Open(data_file_);
         if (!maybe_file.ok()) {
-            std::cerr << "[KlineParquetReplay] Failed to open file: " << data_file_
-                      << " | " << maybe_file.status().ToString() << "\n";
+            LOG_ERROR("[KlineParquetReplay] Failed to open file: {} | {}", data_file_, maybe_file.status().ToString());
             return false;
         }
         std::shared_ptr<arrow::io::ReadableFile> infile = *maybe_file;
@@ -105,14 +103,14 @@ private:
         std::unique_ptr<parquet::arrow::FileReader> reader;
         auto st = parquet::arrow::OpenFile(infile, arrow::default_memory_pool(), &reader);
         if (!st.ok()) {
-            std::cerr << "[KlineParquetReplay] Failed to open parquet reader: " << st.ToString() << "\n";
+            LOG_ERROR("[KlineParquetReplay] Failed to open parquet reader: {}", st.ToString());
             return false;
         }
 
         std::shared_ptr<arrow::Table> table;
         st = reader->ReadTable(&table);
         if (!st.ok()) {
-            std::cerr << "[KlineParquetReplay] Failed to read parquet table: " << st.ToString() << "\n";
+            LOG_ERROR("[KlineParquetReplay] Failed to read parquet table: {}", st.ToString());
             return false;
         }
 
@@ -125,7 +123,7 @@ private:
         auto col_volume = table->GetColumnByName("volume");
 
         if (!col_date || !col_symbol || !col_open || !col_high || !col_low || !col_close || !col_volume) {
-            std::cerr << "[KlineParquetReplay] Missing required columns in parquet file.\n";
+            LOG_ERROR("[KlineParquetReplay] Missing required columns in parquet file.");
             return false;
         }
 
@@ -166,7 +164,7 @@ private:
     void run() {
         std::vector<ParquetKlineRow> rows;
         if (!load_parquet(rows)) {
-            std::cerr << "[KlineParquetReplay] Load parquet failed.\n";
+            LOG_ERROR("[KlineParquetReplay] Load parquet failed.");
             return;
         }
 
@@ -175,7 +173,7 @@ private:
             return a.symbol < b.symbol;
         });
 
-        std::cout << "[KlineParquetReplay] Loaded rows: " << rows.size() << "\n";
+        LOG_INFO("[KlineParquetReplay] Loaded rows: {}", rows.size());
 
         for (const auto& row : rows) {
             if (!running_) break;
@@ -196,7 +194,7 @@ private:
             int volume = 0;
             if (row.volume > static_cast<int64_t>(std::numeric_limits<int>::max())) {
                 if (!volume_clamped_warned_) {
-                    std::cerr << "[KlineParquetReplay] Volume exceeds INT_MAX, clamping.\n";
+                    LOG_WARN("[KlineParquetReplay] Volume exceeds INT_MAX, clamping.");
                     volume_clamped_warned_ = true;
                 }
                 volume = std::numeric_limits<int>::max();
@@ -209,9 +207,13 @@ private:
             k.turnover = use_close_x_volume_ ? (k.close * static_cast<double>(volume)) : 0.0;
 
             if (debug_ && (bar_count_ < 5 || bar_count_ % 10000 == 0)) {
-                std::cout << "[KlineParquetReplay] #" << bar_count_ << " " << k.symbol
-                          << " " << k.trading_day << " O:" << k.open << " C:" << k.close
-                          << " V:" << k.volume << "\n";
+                LOG_DEBUG("[KlineParquetReplay] #{} {} {} O:{} C:{} V:{}",
+                          bar_count_,
+                          k.symbol,
+                          k.trading_day,
+                          k.open,
+                          k.close,
+                          k.volume);
             }
             ++bar_count_;
 

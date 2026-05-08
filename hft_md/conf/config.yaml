@@ -1,7 +1,16 @@
-md_front: tcp://182.254.243.31:30011
+md_front: tcp://182.254.243.31:40011
 broker_id: '9999'
 user_id: ''
 password: ''
+logging:
+  level: "info"
+  dir: "logs"
+  file_name: "hft_recorder"
+  console: true
+  file: true
+  max_size_mb: 100
+  max_files: 10
+  flush_on: "warn"
 symbols:
 - AP603
 - AP604
@@ -871,9 +880,9 @@ symbols:
 - zn2701
 - zn2702
 output_path: ../data/
-trading_day: '20260409'
+trading_day: '20260507'
 start_time: 08:50:00
-end_time: 15:40:00
+end_time: 23:40:00
 initial_capacity: 50000000
 prefault: true
 shm: /hft_md_snapshot

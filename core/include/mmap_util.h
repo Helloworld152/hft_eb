@@ -1,6 +1,7 @@
 #pragma once
 
 #include "protocol.h"
+#include "../../include/logging.h"
 
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -10,7 +11,6 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
-#include <iostream>
 #include <stdexcept>
 #include <string>
 
@@ -268,7 +268,7 @@ public:
             if (truncate(dat_path.c_str(), actual_size) != 0) {
                 perror("MmapWriter truncate failed");
             } else {
-                std::cout << "[MmapWriter] File truncated to " << final_cursor << " records" << std::endl;
+                LOG_INFO("[MmapWriter] File truncated to {} records", final_cursor);
             }
 
             meta_ptr_->state = mmap_format::STATE_CLOSED;

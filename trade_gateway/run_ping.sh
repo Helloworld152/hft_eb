@@ -1,1 +1,1 @@
-./build/hft_trade_gateway_ping --gateway-id demo_ctp_gw
+../bin/hft_trade_gateway_ping --gateway-id demo_ctp_gw

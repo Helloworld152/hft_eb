@@ -1,5 +1,4 @@
 #include "../../include/factor/factor_node.h"
-#include <iostream>
 
 class ImbalanceFactor : public IFactorNode {
 public:
@@ -23,7 +22,7 @@ public:
         }
 
         if (debug_) {
-            std::cout << "[ImbalanceFactor] value=" << last_value_ << std::endl;
+            LOG_DEBUG("[ImbalanceFactor] value={}", last_value_);
         }
         return last_value_;
     }

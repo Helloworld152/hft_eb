@@ -2,7 +2,6 @@
 #include "protocol.h"
 #include "mmap_util.h"
 #include "market_snapshot.h"
-#include <iostream>
 #include <memory>
 #include <cstring>
 #include <chrono>
@@ -16,7 +15,7 @@ public:
         if (config.find("data_file") != config.end()) {
             file_path_ = config.at("data_file");
         } else {
-            std::cerr << "[Replay] 配置文件中未指定 data_file!" << std::endl;
+            LOG_ERROR("[Replay] 配置文件中未指定 data_file!");
         }
 
         if (config.find("debug") != config.end()) {
@@ -34,12 +33,14 @@ public:
             idle_stop_sec_ = std::stoi(config.at("idle_stop_sec"));
         }
 
-        std::cout << "[Replay] 模块初始化完成。Mmap 基础路径: " << file_path_;
         if (max_capacity_ > 0) {
-            std::cout << ", Max Capacity: " << max_capacity_ << " records (~" 
-                      << (max_capacity_ * sizeof(TickRecord) / (1024.0 * 1024.0 * 1024.0)) << " GB)";
+            LOG_INFO("[Replay] 模块初始化完成。Mmap 基础路径: {} Max Capacity: {} records (~{} GB)",
+                     file_path_,
+                     max_capacity_,
+                     (max_capacity_ * sizeof(TickRecord) / (1024.0 * 1024.0 * 1024.0)));
+        } else {
+            LOG_INFO("[Replay] 模块初始化完成。Mmap 基础路径: {}", file_path_);
         }
-        std::cout << std::endl;
 
         bus_->subscribe(EVENT_POLL_REPLAY, [this](void*) {
             this->poll_once();
@@ -54,7 +55,7 @@ public:
         running_ = false;
         reader_.reset();
         MarketSnapshot::instance().clear();
-        std::cout << "[Replay] Final Ticks: " << tick_count_ << std::endl;
+        LOG_INFO("[Replay] Final Ticks: {}", tick_count_);
     }
 
 private:
@@ -98,10 +99,10 @@ private:
             reader_ = std::make_unique<MmapReader<TickRecord>>(file_path_, max_capacity_);
             last_data_time_ = now;
             perf_logged_ = false;
-            std::cout << "[Replay] 已连接到 Mmap 管道，开始回放..." << std::endl;
+            LOG_INFO("[Replay] 已连接到 Mmap 管道，开始回放...");
             return true;
         } catch (const std::exception& e) {
-            std::cout << "[Replay] 等待数据源 (" << file_path_ << ")... " << e.what() << std::endl;
+            LOG_INFO("[Replay] 等待数据源 ({})... {}", file_path_, e.what());
             return false;
         }
     }
@@ -111,8 +112,7 @@ private:
             auto now = std::chrono::steady_clock::now();
             auto idle_sec = std::chrono::duration_cast<std::chrono::seconds>(now - last_data_time_).count();
             if (idle_sec >= idle_stop_sec_) {
-                std::cout << "[Replay] Idle timeout reached (" << idle_stop_sec_
-                          << "s). Stopping engine." << std::endl;
+                LOG_INFO("[Replay] Idle timeout reached ({}s). Stopping engine.", idle_stop_sec_);
                 bus_->publish(EVENT_ENGINE_STOP, nullptr);
                 running_ = false;
                 return;
@@ -122,8 +122,7 @@ private:
         if (debug_ && tick_count_ > 0 && !perf_logged_) {
             auto end_t = std::chrono::high_resolution_clock::now();
             auto cost_us = std::chrono::duration_cast<std::chrono::microseconds>(end_t - replay_start_t_).count();
-            std::cout << "[Replay] Finished/Paused. Ticks: " << tick_count_
-                      << ", Cost: " << cost_us << " us" << std::endl;
+            LOG_INFO("[Replay] Finished/Paused. Ticks: {}, Cost: {} us", tick_count_, cost_us);
             perf_logged_ = true;
         }
     }
@@ -132,10 +131,14 @@ private:
         // 采样打印：前5条必打，之后每50条打一次
         // Debug mode: Use string comparison for robustness (no dependency on SymbolManager loading)
         if (debug_ && (tick_count_ < 5 || (tick_count_ % 10 == 0 && strcmp(rec.symbol, "au2606") == 0))) {
-            std::cout << "[Bus] #" << tick_count_ << " | " << rec.symbol << " (ID:" << rec.symbol_id << ")"
-                      << " | Trading Day: " << rec.trading_day
-                      << " | Update Time: " << rec.update_time
-                      << " | Last: " << rec.last_price << " | Vol: " << rec.volume << std::endl;
+            LOG_DEBUG("[Bus] #{} | {} (ID:{}) | Trading Day: {} | Update Time: {} | Last: {} | Vol: {}",
+                      tick_count_,
+                      rec.symbol,
+                      rec.symbol_id,
+                      rec.trading_day,
+                      rec.update_time,
+                      rec.last_price,
+                      rec.volume);
         }
         tick_count_++;
 

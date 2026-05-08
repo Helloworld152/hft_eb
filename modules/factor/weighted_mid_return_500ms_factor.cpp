@@ -2,7 +2,6 @@
 
 #include <cmath>
 #include <cstdlib>
-#include <iostream>
 #include <limits>
 
 namespace {
@@ -88,8 +87,7 @@ public:
         }
 
         if (debug_) {
-            std::cout << "[WeightedMidReturn500msFactor] value=" << last_value_
-                      << " weighted_mid=" << mid << std::endl;
+            LOG_DEBUG("[WeightedMidReturn500msFactor] value={} weighted_mid={}", last_value_, mid);
         }
         return last_value_;
     }

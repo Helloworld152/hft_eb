@@ -1,7 +1,6 @@
 #include "../../include/factor/factor_node.h"
 #include <vector>
 #include <cstdlib>
-#include <iostream>
 
 class SmaFactor : public IFactorNode {
 public:
@@ -44,7 +43,7 @@ public:
         }
 
         if (debug_) {
-            std::cout << "[SmaFactor] value=" << last_value_ << " window=" << window_ << std::endl;
+            LOG_DEBUG("[SmaFactor] value={} window={}", last_value_, window_);
         }
         return last_value_;
     }

@@ -2,6 +2,16 @@ trading_hours:
   start: "08:50:00"
   end: "15:30:00"
 
+logging:
+  level: "info"
+  dir: "logs"
+  file_name: "hft_engine"
+  console: true
+  file: true
+  max_size_mb: 100
+  max_files: 10
+  flush_on: "warn"
+
 plugins:
   - name: CTP_Market
     library: "libmod_ctp.so"

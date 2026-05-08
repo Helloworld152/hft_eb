@@ -1,5 +1,5 @@
 #include "../include/symbol_manager.h"
-#include <iostream>
+#include "../../include/logging.h"
 #include <filesystem>
 
 SymbolManager& SymbolManager::instance() {
@@ -24,7 +24,7 @@ void SymbolManager::load(const std::string& path) {
 
     std::ifstream file(final_path);
     if (!file.is_open()) {
-        std::cerr << "[SymbolManager] ERROR: Cannot open symbols file at " << final_path << std::endl;
+        LOG_ERROR("[SymbolManager] Cannot open symbols file at {}", final_path);
         return;
     }
 
@@ -58,7 +58,7 @@ void SymbolManager::load(const std::string& path) {
         }
     }
     loaded_.store(true);
-    std::cout << "[SymbolManager] Loaded " << symbol_to_id_.size() << " symbols." << std::endl;
+    LOG_INFO("[SymbolManager] Loaded {} symbols.", symbol_to_id_.size());
 }
 
 uint64_t SymbolManager::get_id(const char* symbol) const {

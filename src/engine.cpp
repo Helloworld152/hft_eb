@@ -3,7 +3,6 @@
 #include "../core/include/symbol_manager.h"
 #include "../core/include/market_snapshot.h"
 #include <dlfcn.h>
-#include <iostream>
 #include <thread>
 #include <chrono>
 #include <array>
@@ -21,7 +20,7 @@
 static std::atomic<bool> g_shutdown(false);
 
 void signal_handler(int signum) {
-    std::cout << "\n[System] Caught signal " << signum << ", initiating shutdown..." << std::endl;
+    (void)signum;
     g_shutdown = true;
 }
 
@@ -102,7 +101,7 @@ struct PluginHandle {
         module.reset();
 
         if (lib_handle) {
-            std::cout << "[System] Unloading " << name << std::endl;
+            LOG_INFO("[System] Unloading {}", name);
             // 实际上在复杂系统中，dlclose 可能会导致问题，有些库不建议卸载
             dlclose(lib_handle);
         }
@@ -134,10 +133,10 @@ HftEngine::~HftEngine() {
 }
 
 bool HftEngine::loadConfig(const std::string& config_path) {
-    std::cout << ">>> HFT Engine Booting using config: " << config_path << std::endl;
+    LOG_INFO(">>> HFT Engine Booting using config: {}", config_path);
 
     bus_->subscribe(EVENT_ENGINE_STOP, [](void*) {
-        std::cout << "[System] Received EVENT_ENGINE_STOP. Stopping..." << std::endl;
+        LOG_INFO("[System] Received EVENT_ENGINE_STOP. Stopping...");
         g_shutdown = true;
     });
     
@@ -150,14 +149,14 @@ bool HftEngine::loadConfig(const std::string& config_path) {
     }
     
     if (!core_lib) {
-        std::cerr << "[System] Warning: Failed to load libhft_core.so globally: " << dlerror() << std::endl;
+        LOG_WARN("[System] Failed to load libhft_core.so globally: {}", dlerror());
     }
 
     YAML::Node config;
     try {
         config = YAML::LoadFile(config_path);
     } catch (const YAML::Exception& e) {
-        std::cerr << "FATAL: YAML Parse Error: " << e.what() << std::endl;
+        LOG_ERROR("FATAL: YAML Parse Error: {}", e.what());
         return false;
     }
 
@@ -176,20 +175,20 @@ bool HftEngine::loadConfig(const std::string& config_path) {
 
         if (type == "shm") {
             std::string path = snap["path"] ? snap["path"].as<std::string>() : "/hft_snapshot";
-            std::cout << "[System] Initializing SHM MarketSnapshot: " << path << (is_writer ? " (Writer)" : " (Reader)") << std::endl;
+            LOG_INFO("[System] Initializing SHM MarketSnapshot: {} ({})", path, is_writer ? "Writer" : "Reader");
             try {
                 snapshot_impl_ = std::make_unique<ShmMarketSnapshot>(path, is_writer);
             } catch (const std::exception& e) {
-                std::cerr << "[System] Failed to init SHM: " << e.what() << ". Falling back to local." << std::endl;
+                LOG_WARN("[System] Failed to init SHM: {}. Falling back to local.", e.what());
                 snapshot_impl_ = std::make_unique<LocalMarketSnapshot>();
             }
         } else {
-            std::cout << "[System] Initializing Local MarketSnapshot." << std::endl;
+            LOG_INFO("[System] Initializing Local MarketSnapshot.");
             snapshot_impl_ = std::make_unique<LocalMarketSnapshot>();
         }
     } else {
         // 默认兜底
-        std::cout << "[System] No snapshot config found, using Local MarketSnapshot." << std::endl;
+        LOG_INFO("[System] No snapshot config found, using Local MarketSnapshot.");
         snapshot_impl_ = std::make_unique<LocalMarketSnapshot>();
     }
     
@@ -201,9 +200,9 @@ bool HftEngine::loadConfig(const std::string& config_path) {
         if (th["start"]) start_time_ = th["start"].as<std::string>();
         if (th["end"]) end_time_ = th["end"].as<std::string>();
         
-        std::cout << "[Config] Trading Hours: " 
-                  << (start_time_.empty() ? "Any" : start_time_) << " - " 
-                  << (end_time_.empty() ? "Any" : end_time_) << std::endl;
+        LOG_INFO("[Config] Trading Hours: {} - {}",
+                 start_time_.empty() ? "Any" : start_time_,
+                 end_time_.empty() ? "Any" : end_time_);
     }
 
     if (config["plugins"] && config["plugins"].IsSequence()) {
@@ -217,23 +216,23 @@ bool HftEngine::loadConfig(const std::string& config_path) {
             bool enabled = p["enabled"] ? p["enabled"].as<bool>() : true;
 
             if (!enabled) {
-                std::cout << "[Loader] Skipping disabled module: " << name << std::endl;
+                LOG_INFO("[Loader] Skipping disabled module: {}", name);
                 continue;
             }
 
-            std::cout << "[Loader] Loading Module: " << name << " (" << lib_path << ")..." << std::endl;
+            LOG_INFO("[Loader] Loading Module: {} ({})...", name, lib_path);
 
             // A. 加载动态库
             void* handle = dlopen(lib_path.c_str(), RTLD_LOCAL | RTLD_NOW);
             if (!handle) {
-                std::cerr << "   [ERROR] dlopen failed: " << dlerror() << std::endl;
+                LOG_ERROR("[Loader] dlopen failed for {}: {}", lib_path, dlerror());
                 continue;
             }
 
             // B. 获取工厂
             CreateModuleFunc create_fn = (CreateModuleFunc)dlsym(handle, "create_module");
             if (!create_fn) {
-                std::cerr << "   [ERROR] create_module symbol not found!" << std::endl;
+                LOG_ERROR("[Loader] create_module symbol not found: {}", lib_path);
                 dlclose(handle);
                 continue;
             }
@@ -268,7 +267,7 @@ bool HftEngine::loadConfig(const std::string& config_path) {
                 plugin->name = name;
                 plugins_.push_back(plugin);
             } else {
-                 std::cerr << "   [ERROR] create_module returned null!" << std::endl;
+                 LOG_ERROR("[Loader] create_module returned null: {}", lib_path);
                 dlclose(handle);
             }
         }
@@ -280,7 +279,7 @@ bool HftEngine::loadConfig(const std::string& config_path) {
 void HftEngine::start() {
     if (is_running_) return;
 
-    std::cout << ">>> All Modules Loaded. Starting..." << std::endl;
+    LOG_INFO(">>> All Modules Loaded. Starting...");
     position_service_->start();
     order_service_->start();
     account_service_->start();
@@ -300,7 +299,7 @@ void HftEngine::run() {
         start();
     }
     
-    std::cout << ">>> System Running. Waiting for signal or end time..." << std::endl;
+    LOG_INFO(">>> System Running. Waiting for signal or end time...");
 
     auto last_tick = std::chrono::steady_clock::now();
     uint32_t idle_spins = 0;
@@ -326,7 +325,7 @@ void HftEngine::run() {
              std::string current_time = oss.str();
 
              if (current_time >= end_time_) {
-                 std::cout << "[System] Reached end time " << end_time_ << ". Stopping." << std::endl;
+                 LOG_INFO("[System] Reached end time {}. Stopping.", end_time_);
                  break;
              }
         }
@@ -390,7 +389,7 @@ void HftEngine::run_due_timers() {
 void HftEngine::stop() {
     if (!is_running_ && plugins_.empty()) return;
 
-    std::cout << ">>> Shutting down..." << std::endl;
+    LOG_INFO(">>> Shutting down...");
     
     // 1. 停止模块
     for (auto& p : plugins_) {
@@ -405,7 +404,7 @@ void HftEngine::stop() {
 
     // 3. [CRITICAL] 清空所有事件回调，防止指向已卸载的内存
     if (bus_) {
-        std::cout << ">>> Clearing EventBus..." << std::endl;
+        LOG_INFO(">>> Clearing EventBus...");
         bus_->clear();
     }
 
@@ -418,5 +417,5 @@ void HftEngine::stop() {
     core::CoreServicesRegistry::clear();
     
     is_running_ = false;
-    std::cout << ">>> Shutdown Complete." << std::endl;
+    LOG_INFO(">>> Shutdown Complete.");
 }

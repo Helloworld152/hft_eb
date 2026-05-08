@@ -1,11 +1,11 @@
 #include "../include/trade_gateway/ctp_gateway_adapter.h"
 
 #include "../../core/include/symbol_manager.h"
+#include "../../include/logging.h"
 
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
-#include <iostream>
 #include <sstream>
 #include <thread>
 
@@ -32,7 +32,7 @@ void copy_header(MessageHeader* header,
 
 void debug_log(const GatewayConfig& config, const std::string& message) {
     if (!config.debug) return;
-    std::cout << "[CTPAdapter] " << message << std::endl;
+    LOG_DEBUG("[CTPAdapter] {}", message);
 }
 
 }  // namespace
@@ -220,8 +220,7 @@ void CtpGatewayAdapter::publish_status(char status, const char* msg) {
 }
 
 void CtpGatewayAdapter::publish_error(GatewayErrorCode code, const std::string& message) {
-    std::cerr << "[CTPAdapter] error code=" << static_cast<int32_t>(code)
-              << " msg=" << message << std::endl;
+    LOG_ERROR("[CTPAdapter] error code={} msg={}", static_cast<int32_t>(code), message);
     if (!publisher_) return;
     GatewayEvent event{};
     copy_header(&event.header, EventType::GatewayError, sizeof(GatewayErrorPayload), config_);

@@ -1,5 +1,4 @@
 #include "../../include/factor/factor_node.h"
-#include <iostream>
 
 class SpreadFactor : public IFactorNode {
 public:
@@ -18,7 +17,7 @@ public:
         }
 
         if (debug_) {
-            std::cout << "[SpreadFactor] value=" << last_value_ << std::endl;
+            LOG_DEBUG("[SpreadFactor] value={}", last_value_);
         }
         return last_value_;
     }

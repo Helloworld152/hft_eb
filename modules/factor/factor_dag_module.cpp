@@ -6,7 +6,6 @@
 #include <unordered_map>
 #include <vector>
 #include <memory>
-#include <iostream>
 #include <cstring>
 
 struct FactorNodeHandle {
@@ -45,7 +44,7 @@ public:
         timer_svc_ = timer_svc;
 
         if (config.find("_yaml") == config.end()) {
-            std::cerr << "[FactorDAG] Missing _yaml config. Skip init." << std::endl;
+            LOG_ERROR("[FactorDAG] Missing _yaml config. Skip init.");
             return;
         }
 
@@ -53,7 +52,7 @@ public:
         try {
             doc = YAML::Load(config.at("_yaml"));
         } catch (const YAML::Exception& e) {
-            std::cerr << "[FactorDAG] YAML parse error: " << e.what() << std::endl;
+            LOG_ERROR("[FactorDAG] YAML parse error: {}", e.what());
             return;
         }
 
@@ -76,7 +75,7 @@ public:
                                       StaticDelegate<void()>::bind<FactorDAGModule, &FactorDAGModule::on_timer>(this),
                                       0);
             } else {
-                std::cerr << "[FactorDAG] Timer trigger enabled but timer service is null." << std::endl;
+                LOG_ERROR("[FactorDAG] Timer trigger enabled but timer service is null.");
             }
         }
     }
@@ -91,7 +90,7 @@ private:
     }
     void parse_nodes(const YAML::Node& doc) {
         if (!doc["nodes"] || !doc["nodes"].IsSequence()) {
-            std::cerr << "[FactorDAG] No nodes configured." << std::endl;
+            LOG_ERROR("[FactorDAG] No nodes configured.");
             return;
         }
 
@@ -103,20 +102,20 @@ private:
 
             void* handle = dlopen(lib_path.c_str(), RTLD_LAZY);
             if (!handle) {
-                std::cerr << "[FactorDAG] dlopen failed: " << lib_path << " | " << dlerror() << std::endl;
+                LOG_ERROR("[FactorDAG] dlopen failed: {} | {}", lib_path, dlerror());
                 continue;
             }
 
             CreateFactorFunc create_fn = (CreateFactorFunc)dlsym(handle, "create_factor");
             if (!create_fn) {
-                std::cerr << "[FactorDAG] create_factor not found in: " << lib_path << std::endl;
+                LOG_ERROR("[FactorDAG] create_factor not found in: {}", lib_path);
                 dlclose(handle);
                 continue;
             }
 
             IFactorNode* factor = create_fn();
             if (!factor) {
-                std::cerr << "[FactorDAG] create_factor returned null: " << lib_path << std::endl;
+                LOG_ERROR("[FactorDAG] create_factor returned null: {}", lib_path);
                 dlclose(handle);
                 continue;
             }
@@ -164,7 +163,7 @@ private:
             auto it_child = nodes_.find(from);
             auto it_parent = nodes_.find(to);
             if (it_child == nodes_.end() || it_parent == nodes_.end()) {
-                std::cerr << "[FactorDAG] Edge refers to missing node: " << from << " -> " << to << std::endl;
+                LOG_WARN("[FactorDAG] Edge refers to missing node: {} -> {}", from, to);
                 continue;
             }
             it_parent->second->children.push_back(it_child->second.get());
@@ -179,7 +178,7 @@ private:
             std::string node_id = out["node"].as<std::string>();
             auto it = nodes_.find(node_id);
             if (it == nodes_.end()) {
-                std::cerr << "[FactorDAG] Output refers to missing node: " << node_id << std::endl;
+                LOG_WARN("[FactorDAG] Output refers to missing node: {}", node_id);
                 continue;
             }
             OutputSpec spec;

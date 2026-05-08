@@ -1,5 +1,4 @@
 #include "../../include/factor/factor_node.h"
-#include <iostream>
 
 class LastPriceFactor : public IFactorNode {
 public:
@@ -17,7 +16,7 @@ public:
             last_value_ = ctx.kline->close;
         }
         if (debug_) {
-            std::cout << "[LastPriceFactor] value=" << last_value_ << std::endl;
+            LOG_DEBUG("[LastPriceFactor] value={}", last_value_);
         }
         return last_value_;
     }

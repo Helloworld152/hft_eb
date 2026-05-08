@@ -7,14 +7,6 @@ edition = "2021"
 name = "hft_reader"
 path = "src/lib.rs"
 
-[[bin]]
-name = "hft_reader"
-path = "src/bin/hft_reader.rs"
-
-[[bin]]
-name = "snapshot_reader"
-path = "src/bin/snapshot_reader.rs"
-
 [dependencies]
 memmap2 = "0.9"
 clap = { version = "4.0", features = ["derive"] }

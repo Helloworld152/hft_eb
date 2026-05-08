@@ -1,6 +1,5 @@
 #include "../../include/framework.h"
 #include <chrono>
-#include <iostream>
 #include <vector>
 #include <mutex>
 
@@ -14,7 +13,7 @@ public:
             max_orders_per_sec_ = std::stoi(config.at("max_orders_per_second"));
         }
 
-        std::cout << "[Risk] Initialized. Max Orders/Sec: " << max_orders_per_sec_ << std::endl;
+        LOG_INFO("[Risk] Initialized. Max Orders/Sec: {}", max_orders_per_sec_);
 
         // 订阅原始报单请求
         bus_->subscribe(EVENT_ORDER_REQ, [this](void* d) {
@@ -36,8 +35,7 @@ private:
 
         // 2. 频率检查
         if (order_timestamps_.size() >= (size_t)max_orders_per_sec_) {
-            std::cerr << "[Risk] REJECTED: Order rate limit exceeded! (" 
-                      << max_orders_per_sec_ << " req/sec)" << std::endl;
+            LOG_WARN("[Risk] REJECTED: Order rate limit exceeded! ({} req/sec)", max_orders_per_sec_);
             return;
         }
 

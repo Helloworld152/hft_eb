@@ -3,7 +3,6 @@
 #include "../../core/include/symbol_manager.h"
 #include <atomic>
 #include <cstring>
-#include <iostream>
 #include <string>
 
 class SimTradeModule : public IModule {
@@ -23,9 +22,10 @@ public:
         available_ = initial_balance_;
 
         if (debug_) {
-            std::cout << "[SimTrade] Initialized. balance=" << balance_
-                      << " slippage_ticks=" << slippage_ticks_
-                      << " tick_size=" << tick_size_ << std::endl;
+            LOG_INFO("[SimTrade] Initialized. balance={} slippage_ticks={} tick_size={}",
+                     balance_,
+                     slippage_ticks_,
+                     tick_size_);
         }
 
 
@@ -155,9 +155,12 @@ private:
         available_ = balance_;
 
         if (debug_) {
-            std::cout << "[SimTrade] Trade " << req->symbol << " " << req->direction
-                      << " vol=" << req->volume << " price=" << fill_price
-                      << " balance=" << balance_ << std::endl;
+            LOG_DEBUG("[SimTrade] Trade {} {} vol={} price={} balance={}",
+                      req->symbol,
+                      req->direction,
+                      req->volume,
+                      fill_price,
+                      balance_);
         }
 
         publishAccountLocked();

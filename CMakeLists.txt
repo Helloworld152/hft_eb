@@ -72,11 +72,49 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 # Dependencies
 find_package(Threads REQUIRED)
 find_package(Python3 COMPONENTS Development REQUIRED)
-find_package(yaml-cpp REQUIRED)
-find_package(nlohmann_json REQUIRED)
-find_library(ZMQ_LIBRARY NAMES zmq)
-if (NOT ZMQ_LIBRARY)
-  message(FATAL_ERROR "ZeroMQ library not found. Please install libzmq3-dev.")
+if(NOT TARGET yaml-cpp)
+  set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+  set(YAML_BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+  add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/yaml-cpp
+                   ${CMAKE_CURRENT_BINARY_DIR}/yaml-cpp-build)
+endif()
+if(NOT TARGET nlohmann_json::nlohmann_json)
+  if(EXISTS ${CMAKE_SOURCE_DIR}/third_party/nlohmann_json/CMakeLists.txt)
+    set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/nlohmann_json
+                     ${CMAKE_CURRENT_BINARY_DIR}/nlohmann_json-build)
+  else()
+    message(FATAL_ERROR "third_party/nlohmann_json is required. Please init/update submodules.")
+  endif()
+endif()
+if(NOT TARGET spdlog::spdlog)
+  if(EXISTS ${CMAKE_SOURCE_DIR}/third_party/spdlog/CMakeLists.txt)
+    set(SPDLOG_BUILD_PIC ON CACHE BOOL "" FORCE)
+    set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+    set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(SPDLOG_BUILD_BENCH OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/spdlog
+                     ${CMAKE_CURRENT_BINARY_DIR}/spdlog-build)
+  else()
+    message(FATAL_ERROR "third_party/spdlog is required. Please init/update submodules.")
+  endif()
+endif()
+if(TARGET libzmq)
+  set(ZMQ_LIBRARY libzmq)
+elseif(EXISTS ${CMAKE_SOURCE_DIR}/third_party/libzmq/CMakeLists.txt)
+  set(BUILD_SHARED ON CACHE BOOL "" FORCE)
+  set(BUILD_STATIC OFF CACHE BOOL "" FORCE)
+  set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(ZMQ_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(WITH_PERF_TOOL OFF CACHE BOOL "" FORCE)
+  set(WITH_DOC OFF CACHE BOOL "" FORCE)
+  set(WITH_DOCS OFF CACHE BOOL "" FORCE)
+  add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/libzmq
+                   ${CMAKE_CURRENT_BINARY_DIR}/libzmq-build)
+  set(ZMQ_LIBRARY libzmq)
+else()
+  message(FATAL_ERROR "third_party/libzmq is required. Please init/update submodules.")
 endif()
 
 # Global Includes
@@ -86,15 +124,21 @@ include_directories(core/include)
 # ==========================================
 # 0. 核心基础设施库 (共享单例)
 # ==========================================
+add_library(hft_logging STATIC src/logging.cpp)
+set_target_properties(hft_logging PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(hft_logging PUBLIC yaml-cpp spdlog::spdlog)
+
 add_library(hft_core SHARED
     core/src/symbol_manager.cpp
     core/src/market_snapshot.cpp
     core/src/tick_window_snapshot.cpp
     core/src/core_state.cpp)
 target_link_libraries(hft_core PRIVATE rt) # 显式链接实时库以支持 shm_open
+target_link_libraries(hft_core PUBLIC hft_logging)
 
 # 独立交易网关子系统
 add_subdirectory(trade_gateway)
+add_subdirectory(hft_md)
 
 # 1. 编译插件 A: CTP (模拟)
 add_library(mod_ctp SHARED modules/ctp/ctp_module.cpp)
@@ -293,5 +337,5 @@ target_link_libraries(mod_sweep_trader PRIVATE hft_core)
 # 7. 编译主程序
 add_executable(hft_engine src/main.cpp src/engine.cpp)
 target_include_directories(hft_engine PRIVATE include)
-target_link_libraries(hft_engine PRIVATE hft_core dl pthread yaml-cpp)
+target_link_libraries(hft_engine PRIVATE hft_core hft_logging dl pthread yaml-cpp)
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")

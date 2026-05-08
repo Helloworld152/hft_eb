@@ -5,7 +5,6 @@
 #include "../../trade_gateway/include/trade_gateway/gateway_protocol.h"
 
 #include <cstring>
-#include <iostream>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -29,7 +28,7 @@ public:
         if (rtn_shm_.empty() && !gateway_id_.empty()) rtn_shm_ = "/rtn_ring_" + gateway_id_;
 
         if (gateway_id_.empty()) {
-            std::cerr << "[GatewayPoll] gateway_id is required." << std::endl;
+            LOG_ERROR("[GatewayPoll] gateway_id is required.");
         }
 
         if (config.count("node_id")) {
@@ -52,8 +51,8 @@ public:
             this->send_query(trade_gateway::CommandType::QueryAccount);
         });
 
-        std::cout << "[GatewayPoll] Initialized. gateway_id=" << gateway_id_
-                  << " cmd_shm=" << cmd_shm_ << " rtn_shm=" << rtn_shm_ << std::endl;
+        LOG_INFO("[GatewayPoll] Initialized. gateway_id={} cmd_shm={} rtn_shm={}",
+                 gateway_id_, cmd_shm_, rtn_shm_);
     }
 
     void start() override {
@@ -66,7 +65,7 @@ public:
             rtn_ring_->open(rtn_shm_, ring_capacity_, create_rings_, unlink_on_exit_);
             running_ = true;
         } catch (const std::exception& e) {
-            std::cerr << "[GatewayPoll] Failed to open shared rings: " << e.what() << std::endl;
+            LOG_ERROR("[GatewayPoll] Failed to open shared rings: {}", e.what());
             running_ = false;
             cmd_ring_.reset();
             rtn_ring_.reset();
@@ -109,7 +108,7 @@ private:
     bool push_command(const trade_gateway::GatewayCommand& cmd, const char* tag) {
         if (!running_ || !cmd_ring_) return false;
         if (!cmd_ring_->try_push(cmd)) {
-            std::cerr << "[GatewayPoll] cmd ring full, dropping " << tag << std::endl;
+            LOG_WARN("[GatewayPoll] cmd ring full, dropping {}", tag);
             return false;
         }
         return true;
@@ -231,8 +230,9 @@ private:
         }
         case trade_gateway::EventType::GatewayError: {
             if (debug_) {
-                std::cerr << "[GatewayPoll] gateway error code=" << event.payload.error.code
-                          << " msg=" << event.payload.error.message << std::endl;
+                LOG_WARN("[GatewayPoll] gateway error code={} msg={}",
+                         event.payload.error.code,
+                         event.payload.error.message);
             }
             break;
         }

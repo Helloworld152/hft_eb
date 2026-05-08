@@ -1,6 +1,5 @@
 #include "../../include/factor/factor_node.h"
 #include <yaml-cpp/yaml.h>
-#include <iostream>
 #include <vector>
 #include <string>
 
@@ -26,7 +25,7 @@ public:
                 }
             }
         } catch (const YAML::Exception& e) {
-            std::cerr << "[CombinerFactor] YAML parse error: " << e.what() << std::endl;
+            LOG_ERROR("[CombinerFactor] YAML parse error: {}", e.what());
         }
     }
 
@@ -34,8 +33,9 @@ public:
         if (inputs.empty()) return 0.0;
         if (!weights_.empty() && weights_.size() != inputs.size()) {
             if (!warned_mismatch_) {
-                std::cerr << "[CombinerFactor] weights size mismatch: weights="
-                          << weights_.size() << " inputs=" << inputs.size() << std::endl;
+                LOG_WARN("[CombinerFactor] weights size mismatch: weights={} inputs={}",
+                         weights_.size(),
+                         inputs.size());
                 warned_mismatch_ = true;
             }
             return 0.0;
@@ -51,7 +51,7 @@ public:
         }
 
         if (debug_) {
-            std::cout << "[CombinerFactor] value=" << sum << " inputs=" << inputs.size() << std::endl;
+            LOG_DEBUG("[CombinerFactor] value={} inputs={}", sum, inputs.size());
         }
         return sum;
     }

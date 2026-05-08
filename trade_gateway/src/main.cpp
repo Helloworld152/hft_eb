@@ -1,4 +1,5 @@
 #include "../include/trade_gateway/gateway_runtime.h"
+#include "../../include/logging.h"
 
 #include <csignal>
 #include <iostream>
@@ -14,8 +15,8 @@ void print_usage() {
 }
 
 void handle_signal(int signum) {
+    (void)signum;
     if (g_runtime) {
-        std::cerr << "[TradeGateway] Caught signal " << signum << ", stopping..." << std::endl;
         g_runtime->stop();
     }
 }
@@ -50,10 +51,12 @@ int main(int argc, char* argv[]) {
 
     std::signal(SIGINT, handle_signal);
     std::signal(SIGTERM, handle_signal);
+    hft::logging::init_logging_from_yaml_file(config.config_path, "hft_trade_gateway");
 
     trade_gateway::GatewayRuntime runtime(std::move(config));
     g_runtime = &runtime;
     int rc = runtime.run();
     g_runtime = nullptr;
+    hft::logging::shutdown_logging();
     return rc;
 }

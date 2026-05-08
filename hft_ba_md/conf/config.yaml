@@ -1,5 +1,14 @@
 ws_base: wss://stream.binance.com:9443
 proxy: 192.168.7.9:7890
+logging:
+  level: "info"
+  dir: "logs"
+  file_name: "hft_ba_recorder"
+  console: true
+  file: true
+  max_size_mb: 100
+  max_files: 10
+  flush_on: "warn"
 symbols:
   # 现货
   - BTCUSDT

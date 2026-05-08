@@ -1,5 +1,6 @@
 #include <thread>
 #include "../include/engine.h"
+#include "../include/logging.h"
 
 int main(int argc, char* argv[]) {
     // 0. 基础环境准备
@@ -7,6 +8,8 @@ int main(int argc, char* argv[]) {
 
     std::string config_path = "config.json";
     if (argc > 1) config_path = argv[1];
+
+    hft::logging::init_logging_from_yaml_file(config_path, "hft_engine");
 
     // 1. 创建引擎实例
     HftEngine engine;
@@ -19,6 +22,8 @@ int main(int argc, char* argv[]) {
     engine.run();
 
     engine.stop();
+    LOG_INFO("[System] Exit complete.");
+    hft::logging::shutdown_logging();
 
     return 0;
 }

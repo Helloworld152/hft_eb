@@ -6,7 +6,6 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
-#include <iostream>
 #include <memory>
 #include <string>
 #include <thread>
@@ -40,7 +39,7 @@ public:
         try {
             doc = YAML::Load(yaml_content);
         } catch (const YAML::Exception& e) {
-            std::cerr << "[并行策略树] YAML解析失败: " << e.what() << std::endl;
+            LOG_ERROR("[并行策略树] YAML解析失败: {}", e.what());
             return;
         }
 
@@ -95,13 +94,13 @@ public:
 
             void* handle = dlopen(lib_path.c_str(), RTLD_LAZY);
             if (!handle) {
-                std::cerr << "[并行策略树] 加载失败: " << lib_path << " | " << dlerror() << std::endl;
+                LOG_ERROR("[并行策略树] 加载失败: {} | {}", lib_path, dlerror());
                 continue;
             }
 
             CreateStrategyFunc create_fn = (CreateStrategyFunc)dlsym(handle, "create_strategy");
             if (!create_fn) {
-                std::cerr << "[并行策略树] 符号未找到: create_strategy in " << lib_path << std::endl;
+                LOG_ERROR("[并行策略树] 符号未找到: create_strategy in {}", lib_path);
                 dlclose(handle);
                 continue;
             }
@@ -228,7 +227,7 @@ private:
             enqueue_signal(internal_sig);
         };
         ctx->log = [id](const char* msg) {
-            std::cout << "[策略-" << id << "] " << msg << std::endl;
+            LOG_INFO("[策略-{}] {}", id, msg);
         };
 
         strategy->init(ctx.get(), node_config);

@@ -1,11 +1,12 @@
 #include "Recorder.h"
 #include "symbol_manager.h"
+#include "../../include/logging.h"
 #include "ccapi_cpp/ccapi_session.h"
 #include <yaml-cpp/yaml.h>
 #include <map>
 #include <chrono>
 #include <cstring>
-#include <iostream>
+#include <sstream>
 #include <thread>
 
 ccapi::Logger* ccapi::Logger::logger = nullptr;
@@ -76,19 +77,19 @@ void BaTickRecorder::start() {
         try {
             shm_impl_ = std::make_unique<ShmMarketSnapshot>(shm_path_, true);
             MarketSnapshot::set_instance(shm_impl_.get());
-            std::cout << "[BaRecorder] SHM Snapshot initialized at: " << shm_path_ << std::endl;
+            LOG_INFO("[BaRecorder] SHM Snapshot initialized at: {}", shm_path_);
         } catch (const std::exception& e) {
-            std::cerr << "[BaRecorder] Failed to init SHM: " << e.what() << std::endl;
+            LOG_ERROR("[BaRecorder] Failed to init SHM: {}", e.what());
         }
     }
 
     if (!proxy_.empty()) {
-        std::cout << "[BaRecorder] Proxy enabled for CCAPI: " << proxy_ << std::endl;
+        LOG_INFO("[BaRecorder] Proxy enabled for CCAPI: {}", proxy_);
     }
 
     ws_thread_ = std::thread(&BaTickRecorder::connect_loop, this);
 
-    std::cout << "[BaRecorder] Running (SHM-only). Symbols: " << symbols_.size() << std::endl;
+    LOG_INFO("[BaRecorder] Running (SHM-only). Symbols: {}", symbols_.size());
 }
 
 void BaTickRecorder::stop() {
@@ -191,7 +192,7 @@ void BaTickRecorder::connect_loop() {
     BaCcapiEventHandler event_handler(this);
     ccapi::Session session(session_options, session_configs, &event_handler);
 
-    std::cout << "[BaRecorder] CCAPI session created. Preparing subscriptions..." << std::endl;
+    LOG_INFO("[BaRecorder] CCAPI session created. Preparing subscriptions...");
 
     std::vector<ccapi::Subscription> subscriptions;
     subscriptions.reserve(symbols_.size() * 2);  // depth + ticker
@@ -216,10 +217,9 @@ void BaTickRecorder::connect_loop() {
 
     }
 
-    std::cout << "[BaRecorder] Subscribing to " << subscriptions.size()
-              << " streams." << std::endl;
+    LOG_INFO("[BaRecorder] Subscribing to {} streams.", subscriptions.size());
     session.subscribe(subscriptions);
-    std::cout << "[BaRecorder] Subscribe request sent." << std::endl;
+    LOG_INFO("[BaRecorder] Subscribe request sent.");
 
     while (running_) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -233,17 +233,17 @@ void BaTickRecorder::handle_event(const ccapi::Event& event) {
         for (const auto& message : event.getMessageList()) {
             const auto type = message.getType();
             const auto& cids = message.getCorrelationIdList();
-            std::cout << "[BaRecorder] Subscription status: "
-                      << ccapi::Message::typeToString(type);
+            std::ostringstream oss;
+            oss << "[BaRecorder] Subscription status: " << ccapi::Message::typeToString(type);
             if (!cids.empty()) {
-                std::cout << " cids=[";
+                oss << " cids=[";
                 for (size_t i = 0; i < cids.size(); ++i) {
-                    if (i) std::cout << ",";
-                    std::cout << cids[i];
+                    if (i) oss << ",";
+                    oss << cids[i];
                 }
-                std::cout << "]";
+                oss << "]";
             }
-            std::cout << std::endl;
+            LOG_INFO("{}", oss.str());
 
             if (type == ccapi::Message::Type::SUBSCRIPTION_FAILURE ||
                 type == ccapi::Message::Type::SUBSCRIPTION_FAILURE_DUE_TO_CONNECTION_FAILURE ||
@@ -254,9 +254,9 @@ void BaTickRecorder::handle_event(const ccapi::Event& event) {
                     if (m.empty()) {
                         continue;
                     }
-                    std::cerr << "[BaRecorder] Subscription error details:" << std::endl;
+                    LOG_ERROR("[BaRecorder] Subscription error details:");
                     for (const auto& kv : m) {
-                        std::cerr << "  " << kv.first << "=" << kv.second << std::endl;
+                        LOG_ERROR("  {}={}", kv.first, kv.second);
                     }
                 }
             }
@@ -329,20 +329,20 @@ void BaTickRecorder::handle_depth_message(const ccapi::Message& message, const s
 
     // 打印收到的快照（仅 debug 模式）
     if (debug_) {
-        std::cout << "[SNAPSHOT] " << symbol << " @ " << rec.update_time << " | ";
-        std::cout << "BID: ";
+        std::ostringstream oss;
+        oss << "[SNAPSHOT] " << symbol << " @ " << rec.update_time << " | BID: ";
         for (int i = 0; i < 5; ++i) {
             if (rec.bid_price[i] > 0) {
-                std::cout << rec.bid_price[i] << "x" << rec.bid_volume[i] << " ";
+                oss << rec.bid_price[i] << "x" << rec.bid_volume[i] << " ";
             }
         }
-        std::cout << "| ASK: ";
+        oss << "| ASK: ";
         for (int i = 0; i < 5; ++i) {
             if (rec.ask_price[i] > 0) {
-                std::cout << rec.ask_price[i] << "x" << rec.ask_volume[i] << " ";
+                oss << rec.ask_price[i] << "x" << rec.ask_volume[i] << " ";
             }
         }
-        std::cout << std::endl;
+        LOG_DEBUG("{}", oss.str());
     }
 
     MarketSnapshot::instance().update(rec);

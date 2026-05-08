@@ -9,13 +9,12 @@ public:
     void init(EventBus* bus, const ConfigMap& config, ITimerService* timer_svc = nullptr) override {
         bus_ = bus;
         symbol_ = config.at("symbol");
-        std::cout << "[CTP] Initialized for " << symbol_ << std::endl;
+        LOG_INFO("[CTP] Initialized for {}", symbol_);
         
         // 订阅报单请求，模拟发单
         bus_->subscribe(EVENT_ORDER_REQ, [this](void* d) {
             auto req = static_cast<OrderReq*>(d);
-            std::cout << "[CTP] -> Sending Order to Exchange: " 
-                      << req->direction << " @ " << req->price << std::endl;
+            LOG_INFO("[CTP] -> Sending Order to Exchange: {} @ {}", req->direction, req->price);
         });
     }
 
@@ -34,7 +33,7 @@ public:
                 md.last_price = price;
                 md.volume = 1;
 
-                std::cout << "[CTP] <- OnRtnDepthMarketData: " << price << std::endl;
+                LOG_DEBUG("[CTP] <- OnRtnDepthMarketData: {}", price);
                 bus_->publish(EVENT_MARKET_DATA, &md);
 
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));

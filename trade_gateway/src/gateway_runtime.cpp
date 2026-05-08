@@ -1,11 +1,11 @@
 #include "../include/trade_gateway/gateway_runtime.h"
 
 #include "../../core/include/symbol_manager.h"
+#include "../../include/logging.h"
 #include "../include/trade_gateway/gateway_adapter_factory.h"
 
 #include <chrono>
 #include <cstring>
-#include <iostream>
 #include <thread>
 
 namespace trade_gateway {
@@ -41,14 +41,13 @@ int GatewayRuntime::run() {
         return 1;
     }
 
-    std::cout << "[TradeGateway] Starting gateway runtime"
-              << " gateway_id=" << gateway_config_.gateway_id
-              << " account_id=" << gateway_config_.account_id
-              << " adapter=" << gateway_config_.adapter_type
-              << " config=" << config_.config_path
-              << " cmd_shm=" << gateway_config_.cmd_shm
-              << " rtn_shm=" << gateway_config_.rtn_shm
-              << std::endl;
+    LOG_INFO("[TradeGateway] Starting gateway runtime gateway_id={} account_id={} adapter={} config={} cmd_shm={} rtn_shm={}",
+             gateway_config_.gateway_id,
+             gateway_config_.account_id,
+             gateway_config_.adapter_type,
+             config_.config_path,
+             gateway_config_.cmd_shm,
+             gateway_config_.rtn_shm);
 
     running_.store(true, std::memory_order_release);
     adapter_->connect();
@@ -126,7 +125,7 @@ void GatewayRuntime::handle_command(const GatewayCommand& cmd) {
 
 void GatewayRuntime::publish_event(const GatewayEvent& event) {
     if (!rtn_ring_.try_push(event)) {
-        std::cerr << "[TradeGateway] rtn ring full, dropping event type=" << event.header.type << std::endl;
+        LOG_WARN("[TradeGateway] rtn ring full, dropping event type={}", event.header.type);
     }
 }
 

@@ -1,6 +1,5 @@
 #include "framework.h"
 #include "protocol.h"
-#include <iostream>
 #include <cstring>
 #include <cmath>
 #include <unordered_map>
@@ -51,8 +50,7 @@ public:
             onKline((KlineRecord*)data);
         });
 
-        std::cout << "[KlineModule] Initialized. Output: " << output_path_ 
-                  << " Debug: " << (debug_ ? "ON" : "OFF") << std::endl;
+        LOG_INFO("[KlineModule] Initialized. Output: {} Debug: {}", output_path_, debug_ ? "ON" : "OFF");
     }
 
 private:
@@ -170,19 +168,20 @@ private:
             writer_1d_ = std::make_unique<MmapWriter<KlineRecord>>(
                 output_path_ + "/kline_1d_" + day_str, 10000);
                 
-            std::cout << "[KlineModule] Writers created for day " << day_str << std::endl;
+            LOG_INFO("[KlineModule] Writers created for day {}", day_str);
         } catch (const std::exception& e) {
-            std::cerr << "[KlineModule] Failed to create writers: " << e.what() << std::endl;
+            LOG_ERROR("[KlineModule] Failed to create writers: {}", e.what());
         }
     }
 
     void publish_kline(KlineRecord& k) {
         if (debug_) {
-            std::cout << "[KlineModule][DEBUG] Publish Kline: " 
-                      << k.symbol << " " 
-                      << k.start_time << " "
-                      << "O:" << k.open << " C:" << k.close 
-                      << " V:" << k.volume << std::endl;
+            LOG_DEBUG("[KlineModule] Publish Kline: {} {} O:{} C:{} V:{}",
+                      k.symbol,
+                      k.start_time,
+                      k.open,
+                      k.close,
+                      k.volume);
         }
 
         // 分发事件

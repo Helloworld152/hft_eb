@@ -7,8 +7,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
+get_filename_component(HFT_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
+
 # Include paths
 include_directories(include)
+include_directories(../include)
 include_directories(../core/include)
 # Library paths
 link_directories(${CMAKE_SOURCE_DIR}/../bin)
@@ -16,6 +19,7 @@ link_directories(${CMAKE_SOURCE_DIR}/../bin)
 # Source files
 set(BA_SOURCES
     src/main.cpp
+    ../src/logging.cpp
     src/Recorder.cpp
 )
 
@@ -28,12 +32,38 @@ add_executable(hft_ba_recorder ${BA_SOURCES})
 find_package(Threads REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(OpenSSL REQUIRED)
-find_package(yaml-cpp REQUIRED)
-find_package(nlohmann_json REQUIRED)
+if(NOT TARGET yaml-cpp)
+  set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+  set(YAML_BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+  add_subdirectory(${HFT_REPO_ROOT}/third_party/yaml-cpp
+                   ${CMAKE_CURRENT_BINARY_DIR}/yaml-cpp-build)
+endif()
+if(NOT TARGET nlohmann_json::nlohmann_json)
+  if(EXISTS ${HFT_REPO_ROOT}/third_party/nlohmann_json/CMakeLists.txt)
+    set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${HFT_REPO_ROOT}/third_party/nlohmann_json
+                     ${CMAKE_CURRENT_BINARY_DIR}/nlohmann_json-build)
+  else()
+    message(FATAL_ERROR "third_party/nlohmann_json is required. Please init/update submodules.")
+  endif()
+endif()
+if(NOT TARGET spdlog::spdlog)
+  if(EXISTS ${HFT_REPO_ROOT}/third_party/spdlog/CMakeLists.txt)
+    set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+    set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(SPDLOG_BUILD_BENCH OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${HFT_REPO_ROOT}/third_party/spdlog
+                     ${CMAKE_CURRENT_BINARY_DIR}/spdlog-build)
+  else()
+    message(FATAL_ERROR "third_party/spdlog is required. Please init/update submodules.")
+  endif()
+endif()
 
 target_link_libraries(
   hft_ba_recorder
   hft_core
+  spdlog::spdlog
   Boost::system
   OpenSSL::SSL
   OpenSSL::Crypto

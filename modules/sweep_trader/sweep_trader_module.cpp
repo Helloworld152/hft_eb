@@ -1,7 +1,6 @@
 #include "../../include/framework.h"
 #include "../../core/include/symbol_manager.h"
 #include "../../core/include/market_snapshot.h"
-#include <iostream>
 #include <fstream>
 #include <sstream>
 #include <filesystem>
@@ -62,7 +61,7 @@ public:
             });
         }
 
-        std::cout << "[SweepTrader] Initialized. Dir: " << order_dir_ << ", Strategy: " << price_strategy_ << std::endl;
+        LOG_INFO("[SweepTrader] Initialized. Dir: {} Strategy: {}", order_dir_, price_strategy_);
     }
 
     void scanDirectory() {
@@ -131,7 +130,7 @@ public:
                 task.end_ts = end_ts;
                 task.last_exec_time = std::chrono::steady_clock::now() - std::chrono::seconds(task.interval_sec);
                 active_tasks_[filename] = task;
-                std::cout << "[SweepTrader] TWAP task added: " << req.symbol << " vol=" << volume << std::endl;
+                LOG_INFO("[SweepTrader] TWAP task added: {} vol={}", req.symbol, volume);
             } else {
                 // Direct 执行
                 if (isCurrentTimeInRange(start_ts, end_ts)) {
@@ -140,7 +139,7 @@ public:
                 }
             }
         } catch (const std::exception& e) {
-            std::cerr << "[SweepTrader] Parse error: " << e.what() << " in line: " << line << std::endl;
+            LOG_ERROR("[SweepTrader] Parse error: {} in line: {}", e.what(), line);
         }
     }
 
@@ -154,7 +153,7 @@ public:
             // 检查时间窗口
             if (current_ts < task.start_ts) { ++it; continue; }
             if (current_ts > task.end_ts || task.executed_volume >= task.total_volume) {
-                std::cout << "[SweepTrader] TWAP finished: " << task.base_req.symbol << std::endl;
+                LOG_INFO("[SweepTrader] TWAP finished: {}", task.base_req.symbol);
                 // 移动文件
                 fs::path old_path = fs::path(order_dir_) / task.filename;
                 if (fs::exists(old_path)) {
@@ -208,8 +207,7 @@ public:
         req.price = price;
         bus_->publish(EVENT_ORDER_REQ, &req);
         
-        std::cout << "[SweepTrader] Order Published: " << req.symbol 
-                  << " " << req.direction << " " << req.volume << " @ " << price << std::endl;
+        LOG_INFO("[SweepTrader] Order Published: {} {} {} @ {}", req.symbol, req.direction, req.volume, price);
         return true;
     }
 
