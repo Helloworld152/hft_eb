@@ -2,8 +2,8 @@
 
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
+#include "hash_containers.h"
 
 #include "protocol.h"
 
@@ -20,8 +20,8 @@ public:
     void apply_reset(const CacheReset& reset);
 
 private:
-    using AccountMap = std::unordered_map<uint64_t, PositionDetail>;
-    using RootMap = std::unordered_map<std::string, AccountMap>;
+    using AccountMap = FastHashMap<uint64_t, PositionDetail>;
+    using RootMap = FastHashMap<std::string, AccountMap>;
 
     static bool is_shfe_ine(const char* exchange_id);
 
@@ -40,9 +40,9 @@ public:
     void apply_reset(const CacheReset& reset);
 
 private:
-    using RefMap = std::unordered_map<std::string, OrderState>;
-    using RootMap = std::unordered_map<std::string, RefMap>;
-    using SysIndexMap = std::unordered_map<std::string, std::unordered_map<std::string, std::string>>;
+    using RefMap = FastHashMap<std::string, OrderState>;
+    using RootMap = FastHashMap<std::string, RefMap>;
+    using SysIndexMap = FastHashMap<std::string, FastHashMap<std::string, std::string>>;
 
     static uint64_t now_ms();
 
@@ -59,7 +59,7 @@ public:
     void apply_reset(const CacheReset& reset);
 
 private:
-    std::unordered_map<std::string, AccountDetail> accounts_;
+    FastHashMap<std::string, AccountDetail> accounts_;
 };
 
 class PositionService {

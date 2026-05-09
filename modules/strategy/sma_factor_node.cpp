@@ -4,7 +4,6 @@
 #include <numeric>
 #include <deque>
 #include <cstring>
-#include <unordered_map>
 #include <string>
 
 /**
@@ -105,7 +104,7 @@ private:
     StrategyContext* ctx_;
     size_t window_size_ = 20;
     double multiplier_ = 1000.0;
-    std::unordered_map<std::string, RingBuffer> price_history_;
+    FastHashMap<std::string, RingBuffer> price_history_;
     bool debug_ = false;
 };
 

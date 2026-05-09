@@ -4,6 +4,7 @@ project(hft_eb)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # ==========================================
 # 编译优化配置
@@ -100,6 +101,16 @@ if(NOT TARGET spdlog::spdlog)
     message(FATAL_ERROR "third_party/spdlog is required. Please init/update submodules.")
   endif()
 endif()
+if(NOT TARGET absl::flat_hash_map)
+  if(EXISTS ${CMAKE_SOURCE_DIR}/third_party/abseil-cpp/CMakeLists.txt)
+    set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "" FORCE)
+    set(ABSL_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/abseil-cpp
+                     ${CMAKE_CURRENT_BINARY_DIR}/abseil-build)
+  else()
+    message(FATAL_ERROR "third_party/abseil-cpp is required. Please init/update submodules.")
+  endif()
+endif()
 if(TARGET libzmq)
   set(ZMQ_LIBRARY libzmq)
 elseif(EXISTS ${CMAKE_SOURCE_DIR}/third_party/libzmq/CMakeLists.txt)
@@ -121,6 +132,9 @@ endif()
 include_directories(include)
 include_directories(core/include)
 
+add_library(hft_hash_containers INTERFACE)
+target_link_libraries(hft_hash_containers INTERFACE absl::flat_hash_map absl::flat_hash_set)
+
 # ==========================================
 # 0. 核心基础设施库 (共享单例)
 # ==========================================
@@ -134,7 +148,7 @@ add_library(hft_core SHARED
     core/src/tick_window_snapshot.cpp
     core/src/core_state.cpp)
 target_link_libraries(hft_core PRIVATE rt) # 显式链接实时库以支持 shm_open
-target_link_libraries(hft_core PUBLIC hft_logging)
+target_link_libraries(hft_core PUBLIC hft_logging hft_hash_containers)
 
 # 独立交易网关子系统
 add_subdirectory(trade_gateway)

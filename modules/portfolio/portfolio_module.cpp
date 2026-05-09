@@ -3,7 +3,6 @@
 #include "../../core/include/symbol_manager.h"
 #include "../../core/include/market_snapshot.h"
 #include <yaml-cpp/yaml.h>
-#include <unordered_map>
 #include <string>
 #include <mutex>
 #include <chrono>
@@ -270,13 +269,13 @@ private:
         bus_->publish(EVENT_ORDER_REQ, &req);
     }
 
-    void prune_expired_locked(std::unordered_map<std::string, SignalState>& per_symbol) {
+    void prune_expired_locked(FastHashMap<std::string, SignalState>& per_symbol) {
         if (signal_ttl_ms_ == 0) return;
         uint64_t now = now_ms();
         for (auto it = per_symbol.begin(); it != per_symbol.end(); ) {
             const auto& st = it->second;
             if (st.ts > 0 && now > st.ts && (now - st.ts) > signal_ttl_ms_) {
-                it = per_symbol.erase(it);
+                per_symbol.erase(it++);
             } else {
                 ++it;
             }
@@ -286,8 +285,8 @@ private:
 private:
     EventBus* bus_ = nullptr;
 
-    std::unordered_map<std::string, double> strategy_weights_;
-    std::unordered_map<uint64_t, std::unordered_map<std::string, SignalState>> signal_cache_;
+    FastHashMap<std::string, double> strategy_weights_;
+    FastHashMap<uint64_t, FastHashMap<std::string, SignalState>> signal_cache_;
     std::mutex mtx_;
 
     std::string default_account_ = "default";

@@ -3,7 +3,6 @@
 #include "../../core/include/symbol_manager.h"
 #include <yaml-cpp/yaml.h>
 #include <dlfcn.h>
-#include <unordered_map>
 #include <vector>
 #include <memory>
 #include <cstring>
@@ -332,11 +331,11 @@ private:
 private:
     EventBus* bus_ = nullptr;
     ITimerService* timer_svc_ = nullptr;
-    std::unordered_map<std::string, std::unique_ptr<FactorNodeHandle>> nodes_;
+    FastHashMap<std::string, std::unique_ptr<FactorNodeHandle>> nodes_;
     std::vector<OutputSpec> outputs_;
 
-    std::unordered_map<uint64_t, TickRecord> last_tick_by_id_;
-    std::unordered_map<uint64_t, KlineRecord> last_kline_by_id_;
+    FastHashMap<uint64_t, TickRecord> last_tick_by_id_;
+    FastHashMap<uint64_t, KlineRecord> last_kline_by_id_;
     uint64_t current_tick_id_ = 0;
     uint64_t current_kline_id_ = 0;
 

@@ -6,7 +6,6 @@
 #include <iostream>
 #include <sstream>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 #include <yaml-cpp/yaml.h>
@@ -196,7 +195,7 @@ private:
         int kside = std::min(top_n, bottom_n);
         if (kside <= 0) return;
 
-        std::unordered_map<std::string, int> targets;
+        FastHashMap<std::string, int> targets;
         targets.reserve(n);
         for (int i = 0; i < kside; ++i) {
             targets[scores[i].first] = base_volume_; // long
@@ -244,13 +243,13 @@ private:
 
     std::vector<std::string> factor_names_;
     std::vector<double> factor_weights_;
-    std::unordered_map<std::string, int> factor_index_;
+    FastHashMap<std::string, int> factor_index_;
 
-    std::unordered_map<std::string, SymbolState> symbol_state_;
+    FastHashMap<std::string, SymbolState> symbol_state_;
     std::vector<std::string> universe_;
 
-    std::unordered_map<std::string, int> position_;
-    std::unordered_map<std::string, int> order_traded_;
+    FastHashMap<std::string, int> position_;
+    FastHashMap<std::string, int> order_traded_;
 };
 
 EXPORT_STRATEGY(CrossSectionCombinerNode)

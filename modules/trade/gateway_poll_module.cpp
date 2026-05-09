@@ -7,7 +7,6 @@
 #include <cstring>
 #include <memory>
 #include <string>
-#include <unordered_map>
 
 class GatewayPollModule : public IModule {
 public:
@@ -313,17 +312,17 @@ private:
         for (auto it = orders_.begin(); it != orders_.end();) {
             if (std::strncmp(it->second.request.account_id, reset.account_id,
                              sizeof(it->second.request.account_id)) == 0) {
-                it = orders_.erase(it);
+                orders_.erase(it++);
             } else {
                 ++it;
             }
         }
         for (auto it = ref_to_id_.begin(); it != ref_to_id_.end();) {
-            if (orders_.find(it->second) == orders_.end()) it = ref_to_id_.erase(it);
+            if (orders_.find(it->second) == orders_.end()) ref_to_id_.erase(it++);
             else ++it;
         }
         for (auto it = sys_to_id_.begin(); it != sys_to_id_.end();) {
-            if (orders_.find(it->second) == orders_.end()) it = sys_to_id_.erase(it);
+            if (orders_.find(it->second) == orders_.end()) sys_to_id_.erase(it++);
             else ++it;
         }
     }
@@ -341,9 +340,9 @@ private:
     bool unlink_on_exit_ = false;
     bool running_ = false;
     bool debug_ = false;
-    std::unordered_map<uint64_t, OrderContext> orders_;
-    std::unordered_map<std::string, uint64_t> ref_to_id_;
-    std::unordered_map<std::string, uint64_t> sys_to_id_;
+    FastHashMap<uint64_t, OrderContext> orders_;
+    FastHashMap<std::string, uint64_t> ref_to_id_;
+    FastHashMap<std::string, uint64_t> sys_to_id_;
 };
 
 EXPORT_MODULE(GatewayPollModule)

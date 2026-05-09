@@ -1,7 +1,6 @@
 #include "../../include/framework.h"
 #include "../../core/include/symbol_manager.h"
 #include <Python.h>
-#include <unordered_set>
 #include <vector>
 #include <sstream>
 #include <mutex>
@@ -367,7 +366,7 @@ private:
     uint64_t tick_count_ = 0;
     uint64_t kline_count_ = 0;
     int sample_every_ = 1;
-    std::unordered_set<uint64_t> symbol_filter_;
+    FastHashSet<uint64_t> symbol_filter_;
 
     std::string py_module_;
     std::string py_class_;

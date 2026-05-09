@@ -2,7 +2,6 @@
 #include "protocol.h"
 #include <cstring>
 #include <cmath>
-#include <unordered_map>
 #include <memory>
 #include "mmap_util.h"
 
@@ -57,7 +56,7 @@ private:
     EventBus* bus_ = nullptr;
     std::string output_path_;
     bool debug_ = false;
-    std::unordered_map<std::string, SymbolContext> contexts_;
+    FastHashMap<std::string, SymbolContext> contexts_;
     
     // Writers
     std::unique_ptr<MmapWriter<KlineRecord>> writer_1m_;

@@ -469,7 +469,7 @@ private:
     std::unique_ptr<ix::WebSocketServer> ws_server_;
     
     // Connection Status Cache: Key = AccountID_Source
-    std::unordered_map<std::string, ConnectionStatus> conn_cache_;
+    FastHashMap<std::string, ConnectionStatus> conn_cache_;
     std::mutex pos_mtx_;
 
     // Internal queue for decoupling bus and network IO

@@ -2,10 +2,10 @@
 
 #include <vector>
 #include <string>
-#include <unordered_map>
 #include <functional>  // 保留用于兼容接口
 #include <iostream>
 #include <array>
+#include "hash_containers.h"
 #include "logging.h"
 #include "static_delegate.h"
 #include "../core/include/protocol.h" // 引入 TickRecord 定义
@@ -80,7 +80,7 @@ public:
 // ==========================================
 // 4. 插件接口 (Plugin 实现)
 // ==========================================
-using ConfigMap = std::unordered_map<std::string, std::string>;
+using ConfigMap = FastHashMap<std::string, std::string>;
 
 class IModule {
 public:

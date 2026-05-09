@@ -6,7 +6,6 @@
 #include <filesystem>
 #include <cstring>
 #include <vector>
-#include <unordered_map>
 #include <chrono>
 #include <iomanip>
 #include <algorithm>
@@ -159,7 +158,7 @@ public:
                 if (fs::exists(old_path)) {
                     fs::rename(old_path, fs::path(order_dir_) / "processed" / task.filename);
                 }
-                it = active_tasks_.erase(it);
+                active_tasks_.erase(it++);
                 continue;
             }
 
@@ -238,8 +237,8 @@ private:
     std::string price_strategy_;
     std::string default_account_;
 
-    std::unordered_map<uint64_t, TickRecord> ticks_;
-    std::unordered_map<std::string, TwapTask> active_tasks_;
+    FastHashMap<uint64_t, TickRecord> ticks_;
+    FastHashMap<std::string, TwapTask> active_tasks_;
 };
 
 EXPORT_MODULE(SweepTraderModule)

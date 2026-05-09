@@ -2,7 +2,6 @@
 #include <iostream>
 #include <cstring>
 #include <cmath>
-#include <unordered_map>
 
 /**
  * PriceJumpNode: 计算因子节点
@@ -53,7 +52,7 @@ private:
     StrategyContext* ctx_;
     double threshold_ = 0.2;
     bool debug_ = false;
-    std::unordered_map<std::string, double> last_price_by_symbol_;
+    FastHashMap<std::string, double> last_price_by_symbol_;
 };
 
 EXPORT_STRATEGY(PriceJumpNode)

@@ -14,7 +14,6 @@
 #include <mutex>
 #include <string>
 #include <thread>
-#include <unordered_map>
 #include <vector>
 
 using json = nlohmann::json;
@@ -60,7 +59,7 @@ bool json_subset_match(const json& expect, const json& actual) {
     return expect == actual;
 }
 
-std::unordered_map<std::string, EventType> build_event_map() {
+FastHashMap<std::string, EventType> build_event_map() {
     return {
         {"EVENT_MARKET_DATA", EVENT_MARKET_DATA},
         {"EVENT_ORDER_REQ", EVENT_ORDER_REQ},
@@ -81,7 +80,7 @@ std::unordered_map<std::string, EventType> build_event_map() {
     };
 }
 
-std::unordered_map<EventType, std::string> build_event_name_map() {
+FastHashMap<EventType, std::string> build_event_name_map() {
     return {
         {EVENT_MARKET_DATA, "EVENT_MARKET_DATA"},
         {EVENT_ORDER_REQ, "EVENT_ORDER_REQ"},
@@ -634,8 +633,8 @@ private:
     int default_timeout_ms_ = 1000;
     bool debug_ = false;
 
-    std::unordered_map<std::string, EventType> event_map_;
-    std::unordered_map<EventType, std::string> event_name_map_;
+    FastHashMap<std::string, EventType> event_map_;
+    FastHashMap<EventType, std::string> event_name_map_;
 
     std::atomic<bool> running_{false};
     std::thread worker_;

@@ -7,15 +7,13 @@
 #include <cstdint>
 #include <iostream>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 using json = nlohmann::json;
 
 namespace {
 
-std::unordered_map<std::string, EventType> build_event_map() {
+FastHashMap<std::string, EventType> build_event_map() {
     return {
         {"EVENT_MARKET_DATA", EVENT_MARKET_DATA},
         {"EVENT_ORDER_REQ", EVENT_ORDER_REQ},
@@ -36,7 +34,7 @@ std::unordered_map<std::string, EventType> build_event_map() {
     };
 }
 
-std::unordered_map<EventType, std::string> build_event_name_map() {
+FastHashMap<EventType, std::string> build_event_name_map() {
     return {
         {EVENT_MARKET_DATA, "EVENT_MARKET_DATA"},
         {EVENT_ORDER_REQ, "EVENT_ORDER_REQ"},
@@ -306,7 +304,7 @@ private:
         auto event_map = build_event_map();
         auto names = split_csv(events_raw_);
 
-        std::unordered_set<EventType> dedup;
+        FastHashSet<EventType> dedup;
         for (const auto& name : names) {
             if (name.empty()) continue;
             auto it = event_map.find(name);
@@ -358,8 +356,8 @@ private:
     uint64_t printed_ = 0;
 
     std::vector<EventType> event_types_;
-    std::unordered_map<EventType, uint64_t> counters_;
-    std::unordered_map<EventType, std::string> event_name_map_ = build_event_name_map();
+    FastHashMap<EventType, uint64_t> counters_;
+    FastHashMap<EventType, std::string> event_name_map_ = build_event_name_map();
 };
 
 EXPORT_MODULE(EventSamplerModule)

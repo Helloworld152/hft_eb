@@ -15,6 +15,13 @@ endif()
 
 find_package(Threads REQUIRED)
 
+if(NOT TARGET absl::flat_hash_map)
+    set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "" FORCE)
+    set(ABSL_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/abseil-cpp
+                     ${CMAKE_CURRENT_BINARY_DIR}/abseil-build)
+endif()
+
 add_executable(queue_bench queue_bench.cpp)
 target_include_directories(queue_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(queue_bench PRIVATE Threads::Threads)
@@ -30,3 +37,7 @@ target_link_libraries(function_pointer_bench PRIVATE Threads::Threads)
 add_executable(rvo_move_bench rvo_move_bench.cpp)
 target_include_directories(rvo_move_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(rvo_move_bench PRIVATE Threads::Threads)
+
+add_executable(hash_map_bench hash_map_bench.cpp)
+target_include_directories(hash_map_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_link_libraries(hash_map_bench PRIVATE Threads::Threads absl::flat_hash_map absl::flat_hash_set)

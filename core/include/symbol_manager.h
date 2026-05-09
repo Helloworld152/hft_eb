@@ -2,13 +2,13 @@
 
 #include <string>
 #include <vector>
-#include <unordered_map>
 #include <fstream>
 #include <sstream>
 #include <iostream>
 #include <mutex>
 #include <algorithm>
 #include <atomic>
+#include "hash_containers.h"
 
 class SymbolManager {
 public:
@@ -32,10 +32,10 @@ public:
 private:
     SymbolManager();
     
-    std::unordered_map<uint64_t, std::string> id_to_symbol_;
-    std::unordered_map<std::string, uint64_t> symbol_to_id_;
-    std::unordered_map<uint64_t, double> id_to_multiplier_;
-    std::unordered_map<std::string, std::string> symbol_to_exchange_;
+    FastHashMap<uint64_t, std::string> id_to_symbol_;
+    FastHashMap<std::string, uint64_t> symbol_to_id_;
+    FastHashMap<uint64_t, double> id_to_multiplier_;
+    FastHashMap<std::string, std::string> symbol_to_exchange_;
     mutable std::mutex mtx_;
     std::atomic<bool> loaded_;
 };
