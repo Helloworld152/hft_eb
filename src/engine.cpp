@@ -7,13 +7,13 @@
 #include <chrono>
 #include <array>
 #include <csignal>
-#include <iomanip>
+#include <cstdio>
 #include <ctime>
-#include <sstream>
 #include <atomic>
 #include <memory>
 #include <cstdint>
 #include <functional>  // 保留用于兼容接口
+#include <immintrin.h>
 
 #include <yaml-cpp/yaml.h>
 
@@ -198,11 +198,17 @@ bool HftEngine::loadConfig(const std::string& config_path) {
     if (config["trading_hours"]) {
         const auto& th = config["trading_hours"];
         if (th["start"]) start_time_ = th["start"].as<std::string>();
-        if (th["end"]) end_time_ = th["end"].as<std::string>();
+        if (th["end"]) {
+            std::string end_str = th["end"].as<std::string>();
+            int h = 0, m = 0, s = 0;
+            if (std::sscanf(end_str.c_str(), "%d:%d:%d", &h, &m, &s) == 3) {
+                end_time_seconds_ = h * 3600 + m * 60 + s;
+            }
+        }
         
         LOG_INFO("[Config] Trading Hours: {} - {}",
                  start_time_.empty() ? "Any" : start_time_,
-                 end_time_.empty() ? "Any" : end_time_);
+                 end_time_seconds_ >= 0 ? std::to_string(end_time_seconds_) : "Any");
     }
 
     if (config["plugins"] && config["plugins"].IsSequence()) {
@@ -305,33 +311,30 @@ void HftEngine::run() {
     uint32_t idle_spins = 0;
 
     while (!g_shutdown) {
-        auto now_clock = std::chrono::steady_clock::now();
-        if (now_clock - last_tick >= std::chrono::seconds(1)) {
-            total_seconds_++;
-            last_tick += std::chrono::seconds(1);
-            run_due_timers();
-        }
-
         // 主循环只负责发轮询驱动，具体抓取逻辑下沉到插件。
         bus_->publish(EVENT_POLL_GATEWAY, nullptr);
         bus_->publish(EVENT_POLL_REPLAY, nullptr);
 
-        // --- 结束时间检查 ---
-        if (!end_time_.empty()) {
-             auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-             std::tm local_tm = *std::localtime(&now);
-             std::ostringstream oss;
-             oss << std::put_time(&local_tm, "%H:%M:%S");
-             std::string current_time = oss.str();
-
-             if (current_time >= end_time_) {
-                 LOG_INFO("[System] Reached end time {}. Stopping.", end_time_);
-                 break;
-             }
-        }
-
-        __builtin_ia32_pause();
+        _mm_pause();
         if ((++idle_spins & 0xFFu) == 0u) {
+            auto now_clock = std::chrono::steady_clock::now();
+            if (now_clock - last_tick >= std::chrono::seconds(1)) {
+                total_seconds_++;
+                last_tick = now_clock;
+                run_due_timers();
+
+                if (end_time_seconds_ >= 0) {
+                    time_t tt = std::chrono::system_clock::to_time_t(
+                        std::chrono::system_clock::now());
+                    struct tm local_tm;
+                    localtime_r(&tt, &local_tm);
+                    if (local_tm.tm_hour * 3600 + local_tm.tm_min * 60 + local_tm.tm_sec
+                        >= end_time_seconds_) {
+                        LOG_INFO("[System] Reached end time. Stopping.");
+                        break;
+                    }
+                }
+            }
             std::this_thread::yield();
         }
     }

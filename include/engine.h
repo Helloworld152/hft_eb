@@ -50,7 +50,7 @@ private:
     std::vector<std::shared_ptr<PluginHandle>> plugins_;
     bool is_running_;
     std::string start_time_;
-    std::string end_time_;
+    int end_time_seconds_ = -1;  // 预解析的结束时间(秒)，-1 表示未设置
 
     // 统一定时器：任务列表 + 运行秒数，由 run() 每秒驱动
     std::vector<TimerTask> timer_tasks_;
