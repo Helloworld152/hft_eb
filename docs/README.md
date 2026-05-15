@@ -5,10 +5,11 @@
 ## 推荐阅读顺序
 
 1. 顶层系统说明：[README.md](../README.md)
-2. 模块职责总览：[docs/modules_overview.md](modules_overview.md)
-3. 并发与进程边界：[docs/并发架构设计_concurrency_design.md](并发架构设计_concurrency_design.md)
-4. 交易 gateway 进程化方案：[docs/交易网关进程化设计_gateway_process.md](交易网关进程化设计_gateway_process.md)
-5. 订单与持仓核心状态：
+2. 项目导读文章：[docs/why_hft_eb.md](why_hft_eb.md)
+3. 模块职责总览：[docs/modules_overview.md](modules_overview.md)
+4. 并发与进程边界：[docs/并发架构设计_concurrency_design.md](并发架构设计_concurrency_design.md)
+5. 交易 gateway 进程化方案：[docs/交易网关进程化设计_gateway_process.md](交易网关进程化设计_gateway_process.md)
+6. 订单与持仓核心状态：
    - [docs/订单管理设计_order_manager.md](订单管理设计_order_manager.md)
    - [docs/持仓管理设计_position.md](持仓管理设计_position.md)
 
@@ -63,6 +64,7 @@
 
 ### 7. 路线图与历史记录
 
+- [docs/why_hft_eb.md](why_hft_eb.md)：面向外部读者和新开发者的项目导读文章。
 - [docs/开发路线图_roadmap.md](开发路线图_roadmap.md)：系统阶段目标与优先级。
 - [docs/热重载设计_hot_reload.md](热重载设计_hot_reload.md)：热重载方向记录。
 - [docs/portfolio_module.md](portfolio_module.md)：组合层设计记录。
@@ -73,10 +75,11 @@
 ### 新人入门
 
 1. [README.md](../README.md)
-2. [docs/README.md](README.md)
-3. [docs/modules_overview.md](modules_overview.md)
-4. [docs/开发路线图_roadmap.md](开发路线图_roadmap.md)
-5. [docs/plugins/README.md](plugins/README.md)
+2. [docs/why_hft_eb.md](why_hft_eb.md)
+3. [docs/README.md](README.md)
+4. [docs/modules_overview.md](modules_overview.md)
+5. [docs/开发路线图_roadmap.md](开发路线图_roadmap.md)
+6. [docs/plugins/README.md](plugins/README.md)
 
 ### 做交易链路改造
 
