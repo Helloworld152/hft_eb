@@ -1,226 +1,517 @@
-# HFT Event-Based System (hft_eb)
+# HFT Event-Based System (`hft_eb`)
 
-## 简介
-`hft_eb` 是一个基于事件驱动架构（Event-Driven Architecture）的高频交易系统核心引擎。目标是提供低延迟、高吞吐、可插拔的交易基础设施，并支持回测、回放、仿真与实盘接入。
+## 中文速览
 
-文档入口：
-- `docs/README.md`：设计文档总导航
-- `docs/modules_overview.md`：模块职责总览
+`hft_eb` 是一个基于事件驱动架构的高频交易框架，核心由以下几部分组成：
+
+- `hft_engine`：主引擎进程，负责加载 YAML 配置、初始化核心状态、动态加载模块并驱动事件循环
+- `modules/`：策略、因子、风控、交易、回放、监控等插件
+- `core/`：订单、持仓、账户、快照、协议和共享基础设施
+- `trade_gateway/`：独立交易网关进程，适合将柜台适配层和主引擎隔离
+- `hft_md/`：行情录制工具，将 Tick 写入 mmap 文件供回放使用
+
+这个 README 主要服务两类开发场景：
+
+- 快速了解项目怎么构建、怎么运行
+- 快速做二次开发，新增或修改模块
+
+相关文档入口：
+
+- `docs/README.md`：文档总索引
+- `docs/modules_overview.md`：模块职责概览
 - `docs/plugins/README.md`：插件参数索引
 
-## 核心设计哲学
-- **Zero Copy (零拷贝)**: 事件在总线上传递时仅传递指针，杜绝不必要的内存拷贝。
-- **Lock Free (无锁设计)**: 关键路径采用单线程同步调用，避免互斥锁竞争。
-- **IPC RingBuffer**: 采用 **Mmap + Atomic Cursor** 实现跨进程/跨模块的无锁低延迟数据传输。
-- **Plugin Architecture (插件化)**: 基于动态库（`.so`）的插件系统，支持运行时加载与灵活配置。
-- **Risk First (风控优先)**: 风控模块作为交易前置过滤器，确保资金安全。
+### 中文快速理解
 
-## 系统架构
+运行时主链路非常直接：
 
-### 架构总览
-```mermaid
-flowchart LR
-    subgraph Source["数据源 / 回放侧"]
-        Recorder["hft_md / hft_ba_md"]
-        Mmap[("Tick / Kline mmap data")]
-        Live["外部交易所 / 柜台 / 行情源"]
-    end
+1. `hft_engine` 读取 YAML 配置
+2. 初始化 `core/` 中的共享状态和快照
+3. 按配置顺序 `dlopen` 各个 `.so` 模块
+4. 主循环持续发布 `EVENT_POLL_GATEWAY` 和 `EVENT_POLL_REPLAY`
+5. 各模块通过 `EventBus` 同步订阅和发布事件，形成交易链路
 
-    subgraph Engine["主引擎进程 hft_engine"]
-        EngineBoot["HftEngine<br/>配置加载 / 模块生命周期 / 定时器"]
+典型链路：
 
-        Bus{"EventBus"}
-        Core["Core State<br/>order / position / account / snapshot"]
+`Replay / 行情 -> Strategy / Factor -> Portfolio(可选) -> Risk -> Trade -> Core State / Monitor`
 
-        subgraph Research["研究 / 策略层模块"]
-            Replay["Replay / KlineReplay"]
-            Strategy["Strategy / StrategyTree / PyStrategy"]
-            Factor["Factor DAG"]
-            Portfolio["Portfolio (optional)"]
-        end
+### 中文目录速览
 
-        subgraph Execution["执行 / 观测层模块"]
-            Risk["Risk"]
-            Trade["SimTrade / GatewayPoll / CCAPI"]
-            Monitor["Monitor / SignalCsv / TestHarness"]
-        end
-    end
-
-    subgraph Gateway["可选独立交易网关进程 hft_trade_gateway"]
-        Runtime["Gateway Runtime / Adapter"]
-    end
-
-    subgraph IPC["跨进程 IPC"]
-        Cmd[("cmd_ring_gateway_id")]
-        Rtn[("rtn_ring_gateway_id")]
-    end
-
-    Recorder -->|写入| Mmap
-    Mmap -->|Replay 读取| Replay
-    Live -->|实盘接入 / 私有回报| Runtime
-
-    EngineBoot --> Bus
-    Replay -->|EVENT_MARKET_DATA / EVENT_KLINE| Bus
-    Bus --> Strategy
-    Bus --> Factor
-    Factor -->|EVENT_SIGNAL| Bus
-    Strategy -->|EVENT_SIGNAL / EVENT_ORDER_REQ| Bus
-    Bus --> Portfolio
-    Portfolio -->|EVENT_ORDER_REQ| Bus
-    Bus --> Risk
-    Risk -->|EVENT_ORDER_SEND| Bus
-    Bus --> Trade
-    Trade -->|EVENT_RTN_ORDER / EVENT_RTN_TRADE / EVENT_ACC_UPDATE| Bus
-    Bus --> Core
-    Bus --> Monitor
-    Core -->|共享状态 / 查询结果| Monitor
-
-    Trade -->|GatewayPoll 发命令| Cmd
-    Cmd --> Runtime
-    Runtime -->|OrderRtn / TradeRtn / Pos / Acc / Conn| Rtn
-    Rtn -->|GatewayPoll 轮询回灌| Trade
-```
-
-### 核心组件
-- **HftEngine**: 负责配置加载、插件生命周期、定时器、信号退出与主循环。
-- **EventBus**: 同步事件分发总线，事件类型定义见 `include/framework.h`。
-- **Core State**: 订单、持仓、账户等共享状态服务，位于 `core/`。
-- **MarketSnapshot**: 最新行情快照，支持 `local` 与 `shm` 两种后端。
-- **Plugins (模块)**: 通过 YAML 配置动态加载 `.so`，按顺序组成研究、回测、仿真和交易链路。
-
-读图建议：
-- 左侧是数据进入系统的两条路：`hft_md` 写 mmap 供 `Replay` 回放，或外部柜台直接接入独立 `trade_gateway`。
-- 中间是 `hft_engine` 主进程：行情经 `EventBus` 分发到策略/因子，再经过 `Portfolio`、`Risk`、`Trade` 形成完整执行链路。
-- 右侧是可选的独立交易网关：只有使用 `GatewayPoll` 时才会经过共享内存 ring，与主进程形成进程隔离。
-
-### 常见链路
-
-1. Tick 回放 / 行情接入：`hft_md -> mmap -> Replay -> EventBus`
-2. 信号生成：`StrategyTree / Factor DAG / PyStrategy -> EVENT_SIGNAL`
-3. 下单链路：`Portfolio(可选) -> Risk -> Trade`
-4. 状态与观测：`Trade 回报 -> Core State -> Monitor / SignalCsv`
-
-## 目录结构
-```
+```text
 hft_eb/
-├── bin/                     # 编译产出 (hft_engine + 插件 .so)
-├── build/                   # 中间编译目录
-├── conf/                    # 配置文件 (.yaml)
-├── core/                    # 核心库 (IPC, Protocol, SHM)
-├── data/                    # 行情数据存储 (Mmap)
-├── docs/                    # 设计文档
-├── hft_md/                  # 行情录制器项目 (独立进程)
-├── include/                 # 引擎/插件接口
-├── modules/                 # 插件源码
-├── py_tools/                # Python 工具
-├── rust_tools/              # Rust 工具
-├── src/                     # 引擎源码
-├── trade_gateway/           # 独立交易 gateway 进程子系统
-├── tests/                   # 测试与用例
-├── third_party/             # 第三方依赖 (CTP)
-└── build_release.sh         # 构建脚本
+├── conf/                 # YAML 配置与 symbols 文件
+├── core/                 # 核心状态、快照、协议、IPC 基础设施
+├── include/              # 引擎和插件公共接口
+├── modules/              # 各类动态插件
+├── src/                  # 主引擎实现
+├── trade_gateway/        # 独立交易网关
+├── hft_md/               # 行情录制器
+├── py_tools/             # Python 工具
+├── rust_tools/           # Rust 工具
+├── docs/                 # 设计与说明文档
+└── tests/                # 测试与实验代码
 ```
 
-## 构建与依赖
+### 中文构建
 
-### 依赖项
-- Linux
-- C++17 编译器 (GCC/Clang)
-- CMake >= 3.10
-- Boost (system)
-- OpenSSL
-- RapidJSON (头文件)
-- yaml-cpp, nlohmann_json
-- ixwebsocket, libzmq
-- pthread, dl, rt
-- CTP API (已包含在 `third_party/ctp/` 中，实盘/行情接入需要)
+推荐直接使用仓库脚本：
 
-### 可选依赖
-- Apache Arrow + Parquet (用于 `libmod_kline_parquet_replay.so`)
-- CCAPI (Binance USDT Futures Trade 插件通过 FetchContent 拉取)
-
-### 编译
 ```bash
 ./build_release.sh
 ```
 
-清理并重建：
+清理后重建：
+
 ```bash
 ./build_release.sh clean
 ```
 
-编译完成后输出：
+构建产物默认输出到 `bin/`，主要包括：
+
 - `bin/hft_engine`
 - `bin/hft_trade_gateway`
 - `bin/lib*.so`
 
-## 快速开始
+### 中文快速运行
 
-### 1. 回放 + 策略 + 仿真成交 (示例)
+回放 / 仿真示例：
+
 ```bash
 cd bin
 ./hft_engine ../conf/config_sim_backtest.yaml
 ```
 
-### 2. 因子 DAG 示例
+因子 DAG 示例：
+
 ```bash
 ./bin/hft_engine conf/config_factor_dag.yaml
 ```
 
-### 3. Strategy Tree 并行示例
+并行策略树示例：
+
 ```bash
 ./bin/hft_engine conf/config_strategy_tree_parallel_perf_20260320.yaml
 ```
 
-### 4. Parquet K 线回放 (可选依赖)
-```bash
-python3 py_tools/gen_symbols_from_parquet.py data/a_share_1d/daily_1d.pq -o conf/symbols_a_share.txt
-cd bin
-./hft_engine ../conf/config_test_kline_parquet_replay.yaml
-```
+独立交易网关示例：
 
-### 5. 实盘/仿真实盘 (需配置 CTP 账号与库路径)
-```bash
-./run.sh
-```
-
-### 6. 独立交易 Gateway 骨架
 ```bash
 ./bin/hft_trade_gateway --config conf/trade_gateway_demo.yaml
 ```
 
-注意事项：
-- `run.sh` 会 `pkill hft_engine` 并使用 `conf/config_real_test.yaml`。
-- 实盘相关配置包含账号与密码，请勿提交敏感信息。
-- 需要确保 `LD_LIBRARY_PATH` 包含 `third_party/ctp/lib` 与 `bin`。
+行情录制器：
 
-## 配置说明
+```bash
+cd hft_md
+./build.sh
+./run.sh 20260325
+```
 
-引擎使用 YAML 配置文件（建议显式传入路径，默认 `config.json` 并不常用）。
+### 中文二次开发入口
 
-顶层字段：
-- `symbols_file`: 全局品种映射，默认 `conf/symbols.txt`。
-- `snapshot`: 预风控快照配置。
-- `trading_hours`: 运行时间窗。
-- `plugins`: 插件数组，按顺序加载。
+如果要开始改代码，建议按这个顺序看：
 
-`snapshot` 结构：
-- `type`: `local` 或 `shm`。
-- `path`: 共享内存路径，默认 `/hft_snapshot`。
-- `is_writer`: 是否写入方。
+1. `include/framework.h`：先理解 `IModule`、`IStrategyNode`、`EventBus`、`ITimerService`
+2. `src/engine.cpp`：看引擎如何加载配置、注入配置、加载模块、驱动事件
+3. `conf/` 下任意一个真实配置：理解模块拼装方式
+4. 挑一个简单模块和一个复杂模块阅读
 
-`plugins` 结构：
-- `name`: 模块名称。
-- `library`: `.so` 路径。
-- `enabled`: 是否启用，默认 `true`。
-- `config`: 模块配置。
-- `library` 路径按当前运行目录解析，请与启动命令保持一致。
+建议优先看的文件：
 
-配置传入机制（来自 `src/engine.cpp`）：
-- `config` 中的 **标量字段** 会被扁平化为 `ConfigMap`。
-- 同时注入 `_yaml` 字段，包含完整 YAML 字符串（适合复杂模块自行解析）。
+- `include/framework.h`
+- `src/engine.cpp`
+- `modules/replay/replay_module.cpp`
+- `modules/risk/risk_module.cpp`
+- `modules/strategy/simple_strategy.cpp`
+- `modules/factor/factor_dag_module.cpp`
+- `modules/trade/sim_trade_module.cpp`
 
-配置示例：
+新增普通模块时，最短路径是：
+
+1. 实现 `IModule`
+2. 使用 `EXPORT_MODULE(MyModule)` 导出工厂函数
+3. 在 `CMakeLists.txt` 里增加共享库目标
+4. 让产物输出到 `bin/`
+5. 在 YAML 配置里把该模块接入 `plugins`
+6. 优先用 replay / sim 模式做小范围验证
+
+新增策略树叶子节点时：
+
+1. 实现 `IStrategyNode`
+2. 使用 `EXPORT_STRATEGY(MyStrategyNode)`
+3. 在 `CMakeLists.txt` 中增加独立 `.so`
+4. 通过策略树模块配置加载
+
+### 中文配置约定
+
+引擎实际使用的是 YAML 配置。常见顶层字段包括：
+
+- `symbols_file`
+- `snapshot`
+- `trading_hours`
+- `plugins`
+
+插件配置有一个重要约定：
+
+- `config` 中的标量字段会被扁平化进 `ConfigMap`
+- 完整 YAML 会以 `_yaml` 注入给模块
+
+这意味着：
+
+- 简单模块可以直接读字符串参数
+- 复杂模块可以自己解析 `_yaml`
+
+### 中文开发注意事项
+
+- 尽量显式传入 YAML 配置路径；虽然 `src/main.cpp` 还保留了 `config.json` 默认值，但项目实际运行是 YAML 驱动
+- 插件 `library` 路径按当前工作目录解析；如果配置写的是 `libmod_xxx.so`，建议从 `bin/` 目录启动
+- `run.sh` 会先执行 `pkill hft_engine`，只适合明确知道运行环境时使用
+- 实盘配置可能包含账户、密码或敏感地址，不要提交到仓库
+
+---
+
+## English
+
+`hft_eb` is a Linux-first event-driven high-frequency trading framework written in C++17.
+It is built around a synchronous in-process event bus, dynamically loaded modules, and a shared core state layer for orders, positions, accounts, and market snapshots.
+
+This README is intentionally optimized for developers who need to:
+
+- understand the project quickly
+- build and run it with minimal guesswork
+- add or modify modules without reverse-engineering the whole repository
+
+Related docs:
+
+- `docs/README.md`: documentation index
+- `docs/modules_overview.md`: module responsibility map
+- `docs/plugins/README.md`: plugin parameter index
+
+## What This Repository Contains
+
+The repository provides:
+
+- `hft_engine`: the main host process
+- dynamically loaded strategy / factor / risk / trade / replay modules
+- `hft_trade_gateway`: a standalone trade gateway process
+- `hft_md`: a market data recorder that writes mmap-backed tick files
+- Python and Rust helper tools for research and data handling
+
+Typical use cases:
+
+- replay historical market data into strategies
+- run simulation trading pipelines
+- wire real trading adapters behind a process boundary
+- develop strategy tree nodes or factor DAG nodes
+- extend the framework with custom modules
+
+## Core Runtime Model
+
+At runtime, `hft_engine` does four things:
+
+1. loads a YAML config
+2. initializes shared core services and market snapshot storage
+3. `dlopen`s configured module `.so` files in order
+4. drives the system by publishing polling events into the event bus
+
+The main event loop in `src/engine.cpp` continuously publishes:
+
+- `EVENT_POLL_GATEWAY`
+- `EVENT_POLL_REPLAY`
+
+Modules subscribe to events and publish new ones synchronously through `EventBus`.
+That means the execution chain is explicit and easy to extend, but also means module ordering and callback behavior matter.
+
+Typical pipeline:
+
+`Replay / Market Data -> Strategy / Factor -> Portfolio (optional) -> Risk -> Trade -> Core State / Monitor`
+
+## Architecture Overview
+
+```mermaid
+flowchart LR
+    subgraph Source["Data Source"]
+        MD["hft_md / live feed"]
+        MMAP[("mmap tick / kline files")]
+    end
+
+    subgraph Engine["hft_engine"]
+        BUS["EventBus"]
+        CORE["Core state<br/>orders / positions / accounts / snapshot"]
+        REPLAY["Replay / KlineReplay"]
+        STRAT["Strategy / StrategyTree / PyStrategy"]
+        FACTOR["Factor DAG"]
+        PORT["Portfolio"]
+        RISK["Risk"]
+        TRADE["SimTrade / GatewayPoll / Trade"]
+        MON["Monitor / SignalCsv / TestHarness"]
+    end
+
+    subgraph Gateway["Optional process"]
+        GW["hft_trade_gateway"]
+    end
+
+    MD --> MMAP
+    MMAP --> REPLAY
+    REPLAY --> BUS
+    BUS --> STRAT
+    BUS --> FACTOR
+    STRAT --> BUS
+    FACTOR --> BUS
+    BUS --> PORT
+    PORT --> BUS
+    BUS --> RISK
+    RISK --> BUS
+    BUS --> TRADE
+    TRADE --> BUS
+    BUS --> CORE
+    BUS --> MON
+    TRADE --> GW
+```
+
+## Repository Layout
+
+```text
+hft_eb/
+├── bin/                  # build outputs: executables and shared libraries
+├── build/                # CMake build directory
+├── conf/                 # YAML configs and symbol lists
+├── core/                 # shared core state, snapshot, protocol, IPC primitives
+├── docs/                 # architecture and module docs
+├── hft_md/               # market data recorder
+├── include/              # public engine/module interfaces
+├── modules/              # loadable modules
+├── py_tools/             # Python utilities
+├── rust_tools/           # Rust utilities
+├── src/                  # engine host implementation
+├── tests/                # tests and experiments
+├── third_party/          # bundled dependencies and vendor code
+└── trade_gateway/        # standalone trade gateway process
+```
+
+## Key Extension Points
+
+### 1. Standard engine module
+
+Modules implement `IModule` from `include/framework.h`:
+
+```cpp
+class IModule {
+public:
+    virtual ~IModule() = default;
+    virtual void init(EventBus* bus, const ConfigMap& config, ITimerService* timer_svc = nullptr) = 0;
+    virtual void start() {}
+    virtual void stop() {}
+};
+```
+
+Export the factory symbol with:
+
+```cpp
+EXPORT_MODULE(MyModule)
+```
+
+Use this for:
+
+- replay modules
+- risk modules
+- trade modules
+- monitor modules
+- top-level strategy/factor orchestration modules
+
+### 2. Strategy tree leaf node
+
+Strategy tree plugins implement `IStrategyNode` and export:
+
+```cpp
+EXPORT_STRATEGY(MyStrategyNode)
+```
+
+Use this when you want to add reusable strategy tree leaves instead of a full top-level module.
+
+### 3. Config contract
+
+Engine config is YAML.
+For each plugin entry:
+
+- scalar fields inside `config` are flattened into `ConfigMap`
+- the full plugin config is also injected as `_yaml`
+
+This is important for secondary development:
+
+- simple modules can read flat scalar strings directly
+- complex modules can parse `_yaml` themselves
+
+## Main Build Targets
+
+From the current `CMakeLists.txt`, the important targets are:
+
+Executables:
+
+- `hft_engine`
+- `hft_trade_gateway`
+- `hft_trade_gateway_ping`
+- `hft_recorder`
+- `hft_reader`
+
+Core library:
+
+- `libhft_core.so`
+
+Representative module libraries:
+
+- `libmod_replay.so`
+- `libmod_kline.so`
+- `libmod_strategy.so`
+- `libmod_strategy_tree.so`
+- `libmod_strategy_tree_parallel.so`
+- `libmod_py_strategy.so`
+- `libmod_factor_dag.so`
+- `libmod_portfolio.so`
+- `libmod_risk.so`
+- `libmod_trade.so`
+- `libmod_sim_trade.so`
+- `libmod_gateway_poll.so`
+- `libmod_signal_csv.so`
+- `libmod_test_harness.so`
+- `libmod_event_sampler.so`
+- `libmod_sweep_trader.so`
+
+Optional target:
+
+- `libmod_kline_parquet_replay.so` when Arrow / Parquet dependencies are available
+
+## Build Requirements
+
+Required:
+
+- Linux
+- CMake `>= 3.10`
+- C++17 compiler
+- `pthread`
+- `dl`
+- `rt`
+- Python 3 development headers
+
+Bundled in `third_party/` and built from source by CMake:
+
+- `yaml-cpp`
+- `nlohmann_json`
+- `spdlog`
+- `abseil-cpp`
+- `libzmq`
+
+Environment-specific:
+
+- CTP headers and libraries are expected under `third_party/ctp/`
+- some live-trading workflows require correct runtime library paths
+
+Optional:
+
+- Apache Arrow / Parquet support for parquet replay modules
+
+## Build
+
+Recommended build:
+
+```bash
+./build_release.sh
+```
+
+Clean rebuild:
+
+```bash
+./build_release.sh clean
+```
+
+What the script does:
+
+- creates `build/` and `bin/`
+- unsets common library path variables to avoid accidental linkage pollution
+- runs CMake in Release mode
+- builds with `make -j$(nproc)`
+
+Expected outputs:
+
+- `bin/hft_engine`
+- `bin/hft_trade_gateway`
+- `bin/lib*.so`
+
+## Quick Start
+
+### 1. Simulation / backtest pipeline
+
+```bash
+cd bin
+./hft_engine ../conf/config_sim_backtest.yaml
+```
+
+### 2. Factor DAG example
+
+```bash
+./bin/hft_engine conf/config_factor_dag.yaml
+```
+
+### 3. Parallel strategy tree example
+
+```bash
+./bin/hft_engine conf/config_strategy_tree_parallel_perf_20260320.yaml
+```
+
+### 4. Python strategy / research examples
+
+Examples exist in:
+
+- `conf/config_py_backtest.yaml`
+- `conf/config_py_stock_mf_backtest.yaml`
+- `conf/config_py_stock_cs_mf_backtest.yaml`
+
+### 5. Standalone trade gateway
+
+```bash
+./bin/hft_trade_gateway --config conf/trade_gateway_demo.yaml
+```
+
+### 6. Market data recorder
+
+```bash
+cd hft_md
+./build.sh
+./run.sh 20260325
+```
+
+## Runtime Notes That Matter
+
+- Pass an explicit YAML config path whenever possible. `src/main.cpp` still defaults to `config.json`, but normal project usage is YAML-based.
+- Plugin library paths are resolved from the current working directory because the engine directly `dlopen`s the configured `library` path.
+- If your config uses bare names like `libmod_xxx.so`, running from `bin/` is the safest choice.
+- `run.sh` starts `bin/hft_engine` with `conf/config_real_test.yaml` and uses `pkill hft_engine` first. Review it before using it in shared environments.
+- Live trading configs may include credentials or sensitive endpoints. Keep those out of commits.
+
+## Config Shape
+
+Top-level fields commonly used by the engine:
+
+- `symbols_file`: symbol mapping file, defaults to `conf/symbols.txt`
+- `snapshot`: snapshot backend config
+- `trading_hours`: optional runtime window
+- `plugins`: ordered plugin list
+
+Snapshot fields:
+
+- `type`: `local` or `shm`
+- `path`: shared memory path when `type: shm`
+- `is_writer`: writer/reader mode
+
+Plugin fields:
+
+- `name`: human-readable module name
+- `library`: shared library path
+- `enabled`: optional, defaults to `true`
+- `config`: module-specific config
+
+Minimal example:
+
 ```yaml
 symbols_file: "../conf/symbols.txt"
 
@@ -241,136 +532,74 @@ plugins:
       max_orders_per_second: 100
 ```
 
-插件顺序建议：
-- 典型顺序是 `Replay/行情 -> Strategy/Factor -> Portfolio(可选) -> Risk -> Trade -> Monitor`。
-- `Portfolio` 只在“信号先聚合再下单”的场景启用；若策略直接发 `EVENT_ORDER_REQ`，可跳过它。
-- `GatewayPoll` 适合与独立 `trade_gateway` 进程配对使用；纯回测通常使用 `SimTrade`。
+Recommended plugin order:
 
-## 插件清单 (编译产物)
+- `Replay / market data`
+- `Strategy / Factor`
+- `Portfolio` if you aggregate signals before order generation
+- `Risk`
+- `Trade`
+- `Monitor / output`
 
-行情与回放：
-- `libmod_ctp.so`
-- `libmod_replay.so`
-- `libmod_kline.so`
-- `libmod_kline_parquet_replay.so` (可选)
+## Secondary Development Guide
 
-交易与执行：
-- `libmod_trade.so`
-- `libmod_sim_trade.so`
-- `libmod_gateway_poll.so`
-- `libmod_ccapi_binance_usds_trade.so`
-- `libmod_sweep_trader.so`
+If you are onboarding to the codebase, use this order:
 
-风控与管理：
-- `libmod_risk.so`
+1. read `include/framework.h`
+2. read `src/engine.cpp`
+3. inspect one config in `conf/`
+4. inspect one simple module and one complex module
 
-监控与测试：
-- `libmod_monitor.so`
-- `libmod_signal_csv.so`
-- `libmod_test_harness.so`
-- `libmod_event_sampler.so`
+Suggested starting files:
 
-策略与策略树：
-- `libmod_strategy.so`
-- `libmod_t0_rb_strategy.so`
-- `libmod_py_strategy.so`
-- `libmod_strategy_tree.so`
-- `libmod_strategy_tree_parallel.so`
-- `libstrat_grid.so`
-- `libstrat_cs_combiner.so`
-- `libstrat_price_jump.so`
-- `libstrat_stat_arb.so`
-- `libstrat_sma.so`
-- `libstrat_imbalance.so`
+- `include/framework.h`
+- `src/engine.cpp`
+- `modules/replay/replay_module.cpp`
+- `modules/risk/risk_module.cpp`
+- `modules/strategy/simple_strategy.cpp`
+- `modules/factor/factor_dag_module.cpp`
+- `modules/trade/sim_trade_module.cpp`
 
-因子 DAG：
-- `libmod_factor_dag.so`
-- `libfactor_last_price.so`
-- `libfactor_sma.so`
-- `libfactor_spread.so`
-- `libfactor_imbalance.so`
-- `libfactor_volatility.so`
-- `libfactor_combiner.so`
-- `libfactor_mid_return_500ms.so`
-- `libfactor_weighted_mid_return_500ms.so`
-- `libfactor_quote_intensity_500ms.so`
-- `libfactor_trade_pressure_500ms.so`
+When adding a new module:
 
-组合与执行桥接：
-- `libmod_portfolio.so`
-- `libmod_gateway_poll.so`
+1. implement `IModule`
+2. export it with `EXPORT_MODULE`
+3. add a CMake target
+4. place the output in `bin/`
+5. register it from a YAML config
+6. run with a narrow config first
 
-核心库：
-- `libhft_core.so`
+When adding a strategy tree node:
 
-## 开发新插件
+1. implement `IStrategyNode`
+2. export it with `EXPORT_STRATEGY`
+3. add a dedicated shared library target
+4. load it through the strategy tree module config
 
-插件需实现 `IModule` 接口并导出工厂函数：
+## Developer Workflow Tips
 
-```cpp
-#include "framework.h"
+- Keep module responsibilities narrow. The framework already gives you event dispatch, timer registration, and config injection.
+- Prefer validating new logic in replay or sim-trade mode before touching live paths.
+- Reuse existing configs in `conf/` as templates instead of starting from scratch.
+- For plugin parameter details, use `docs/plugins/README.md`.
+- For architecture decisions and boundaries, use `docs/README.md`.
 
-class MyCustomPlugin : public IModule {
-public:
-    void init(EventBus* bus, const ConfigMap& config, ITimerService* timer_svc) override {
-        bus_ = bus;
-        if (config.find("my_param") != config.end()) {
-            my_param_ = config.at("my_param");
-        }
+## Helper Tooling
 
-        bus_->subscribe(EVENT_MARKET_DATA,
-            StaticDelegate<void(void*)>::bind<MyCustomPlugin, &MyCustomPlugin::onTick>(this));
-    }
+Python tools:
 
-    void onTick(void* data) {
-        auto* tick = static_cast<TickRecord*>(data);
-        (void)tick;
-        // ... your logic ...
-    }
+- data prep and research helpers in `py_tools/`
 
-private:
-    EventBus* bus_ = nullptr;
-    std::string my_param_;
-};
+Rust tools:
 
-EXPORT_MODULE(MyCustomPlugin)
-```
+- `rust_tools/` contains `hft_reader`, with helpers around mmap/parquet workflows
 
-如果是策略树叶子节点，实现 `IStrategyNode` 并导出：
-```cpp
-EXPORT_STRATEGY(MyStrategyNode)
-```
+These tools are not required to build the main engine, but they are useful for research and data-side development.
 
-在 `CMakeLists.txt` 中添加新模块目标，并将输出目录设为 `bin/`。
+## Where To Look Next
 
-## 行情录制器 (hft_md)
-
-`hft_md` 是独立行情录制进程，连接 CTP 行情接口并将 Tick 写入 Mmap 文件，供 `Replay` 插件回放。
-
-编译：
-```bash
-cd hft_md
-./build.sh
-```
-
-运行：
-```bash
-cd hft_md
-./run.sh 20260325
-```
-
-说明：
-- `run.sh` 默认使用当天日期并写入 `hft_md/conf/config.yaml`。
-- 输出目录由 `hft_md/conf/config.yaml` 的 `output_path` 决定，默认 `../data/`。
-- 如需共享快照，配置 `shm` 字段（如 `/hft_md_snapshot`）。
-
-## 高级特性
-
-### 策略树 (Strategy Tree)
-`StrategyTreeModule` 支持将复杂交易逻辑拆解为多节点流水线，并通过 YAML 动态组合与并行分片。
-
-### 极速行情流 (High-Speed Data Stream)
-基于 Mmap 的 `.dat` + `.meta` 结构，支持历史回溯与实时转发。
-
-### 安全监控 (Secure Monitor)
-`monitor` 插件提供 WebSocket + ZMQ 控制与鉴权机制。
+- New developer onboarding: `docs/README.md`
+- Module-level responsibility map: `docs/modules_overview.md`
+- Plugin config lookup: `docs/plugins/README.md`
+- Trade gateway internals: `trade_gateway/`
+- Market data recorder internals: `hft_md/`
