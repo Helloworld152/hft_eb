@@ -45,12 +45,15 @@ public:
                  signal_ttl_ms_,
                  margin_rate_);
 
-        bus_->subscribe(EVENT_SIGNAL, [this](void* d) {
-            this->onSignal(static_cast<SignalRecord*>(d));
-        });
+        bus_->subscribe(EVENT_SIGNAL,
+                        StaticDelegate<void(void*)>::bind<PortfolioModule, &PortfolioModule::on_signal_event>(this));
     }
 
 private:
+    void on_signal_event(void* d) {
+        onSignal(static_cast<SignalRecord*>(d));
+    }
+
     void parse_config(const ConfigMap& config) {
         if (config.count("default_account")) {
             default_account_ = config.at("default_account");

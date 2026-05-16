@@ -5,17 +5,52 @@
 #include <cstring>
 #include <yaml-cpp/yaml.h>
 
+struct StrategyTreeCallbacks {
+    EventBus* bus = nullptr;
+    std::string strategy_id;
+    std::vector<std::unique_ptr<struct StrategyNodeHandle>>* nodes = nullptr;
+    bool* publish_signals = nullptr;
+
+    void send_order(const OrderReq& req);
+    void send_signal(const SignalRecord& sig);
+    void log(const char* msg);
+};
+
 // 策略节点句柄，管理动态库生命周期
 struct StrategyNodeHandle {
     void* lib_handle;
     std::unique_ptr<IStrategyNode> node;
     std::string id;
+    std::unique_ptr<StrategyContext> ctx;
+    std::unique_ptr<StrategyTreeCallbacks> callbacks;
 
     ~StrategyNodeHandle() {
         node.reset();
         if (lib_handle) dlclose(lib_handle);
     }
 };
+
+void StrategyTreeCallbacks::send_order(const OrderReq& req) {
+    bus->publish(EVENT_ORDER_REQ, const_cast<OrderReq*>(&req));
+}
+
+void StrategyTreeCallbacks::send_signal(const SignalRecord& sig) {
+    SignalRecord internal_sig = sig;
+    std::strncpy(internal_sig.source_id, strategy_id.c_str(), sizeof(internal_sig.source_id) - 1);
+
+    for (auto& n : *nodes) {
+        if (n->id == strategy_id) continue;
+        n->node->onSignal(&internal_sig);
+    }
+
+    if (*publish_signals) {
+        bus->publish(EVENT_SIGNAL, &internal_sig);
+    }
+}
+
+void StrategyTreeCallbacks::log(const char* msg) {
+    LOG_INFO("[策略-{}] {}", strategy_id, msg);
+}
 
 /**
  * StrategyTreeModule: 纯粹的二级插件容器
@@ -72,33 +107,16 @@ public:
 
             IStrategyNode* strategy = create_fn();
             
-            // 注入受限上下文
-            StrategyContext* ctx = new StrategyContext(); 
+            auto ctx = std::make_unique<StrategyContext>();
             ctx->strategy_id = id;
-            ctx->send_order = [this, id](const OrderReq& req) {
-                bus_->publish(EVENT_ORDER_REQ, const_cast<OrderReq*>(&req));
-            };
-            
-            // [New Design] 集中式信号分发
-            ctx->send_signal = [this, id](const SignalRecord& sig) {
-                SignalRecord internal_sig = sig;
-                std::strncpy(internal_sig.source_id, id.c_str(), sizeof(internal_sig.source_id)-1);
-                
-                // 1. [Fast Path] 内部同步转发给兄弟节点
-                for (auto& n : nodes_) {
-                    if (n->id == id) continue; // 不发给自己，防止死循环
-                    n->node->onSignal(&internal_sig);
-                }
-
-                // 2. [Slow Path] 可选发布到全局总线 (用于录制/监控)
-                if (publish_signals_) {
-                    bus_->publish(EVENT_SIGNAL, &internal_sig);
-                }
-            };
-
-            ctx->log = [id](const char* msg) {
-                LOG_INFO("[策略-{}] {}", id, msg);
-            };
+            auto callbacks = std::make_unique<StrategyTreeCallbacks>();
+            callbacks->bus = bus_;
+            callbacks->strategy_id = id;
+            callbacks->nodes = &nodes_;
+            callbacks->publish_signals = &publish_signals_;
+            ctx->send_order = StaticDelegate<void(const OrderReq&)>::bind<StrategyTreeCallbacks, &StrategyTreeCallbacks::send_order>(callbacks.get());
+            ctx->send_signal = StaticDelegate<void(const SignalRecord&)>::bind<StrategyTreeCallbacks, &StrategyTreeCallbacks::send_signal>(callbacks.get());
+            ctx->log = StaticDelegate<void(const char*)>::bind<StrategyTreeCallbacks, &StrategyTreeCallbacks::log>(callbacks.get());
             
             // 节点私有参数
             ConfigMap node_config;
@@ -118,37 +136,48 @@ public:
                 node_config["_yaml"] = out.c_str();
             }
             
-            strategy->init(ctx, node_config);
+            strategy->init(ctx.get(), node_config);
             
             auto node_handle = std::make_unique<StrategyNodeHandle>();
             node_handle->lib_handle = handle;
             node_handle->node = std::unique_ptr<IStrategyNode>(strategy);
             node_handle->id = id;
+            node_handle->ctx = std::move(ctx);
+            node_handle->callbacks = std::move(callbacks);
             nodes_.push_back(std::move(node_handle));
         }
 
         // --- 事件透传 ---
 
         // 订阅行情 -> 分发给所有节点
-        bus_->subscribe(EVENT_MARKET_DATA, [this](void* d) {
-            for (auto& n : nodes_) n->node->onTick(static_cast<TickRecord*>(d));
-        });
+        bus_->subscribe(EVENT_MARKET_DATA,
+                        StaticDelegate<void(void*)>::bind<StrategyTreeModule, &StrategyTreeModule::on_market_data_event>(this));
 
         // 订阅 K线 -> 分发
-        bus_->subscribe(EVENT_KLINE, [this](void* d) {
-            for (auto& n : nodes_) n->node->onKline(static_cast<KlineRecord*>(d));
-        });
+        bus_->subscribe(EVENT_KLINE,
+                        StaticDelegate<void(void*)>::bind<StrategyTreeModule, &StrategyTreeModule::on_kline_event>(this));
 
         // 注意：不再订阅 EVENT_SIGNAL，因为内部信号已经同步分发了
         // 如果外部有其他来源的信号，可以在这里补充，但通常策略信号都在本树内
 
         // 订阅成交回报 -> 分发
-        bus_->subscribe(EVENT_RTN_ORDER, [this](void* d) {
-            for (auto& n : nodes_) n->node->onOrderUpdate(static_cast<OrderRtn*>(d));
-        });
+        bus_->subscribe(EVENT_RTN_ORDER,
+                        StaticDelegate<void(void*)>::bind<StrategyTreeModule, &StrategyTreeModule::on_order_update_event>(this));
     }
 
 private:
+    void on_market_data_event(void* d) {
+        for (auto& n : nodes_) n->node->onTick(static_cast<TickRecord*>(d));
+    }
+
+    void on_kline_event(void* d) {
+        for (auto& n : nodes_) n->node->onKline(static_cast<KlineRecord*>(d));
+    }
+
+    void on_order_update_event(void* d) {
+        for (auto& n : nodes_) n->node->onOrderUpdate(static_cast<OrderRtn*>(d));
+    }
+
     EventBus* bus_;
     std::vector<std::unique_ptr<StrategyNodeHandle>> nodes_;
     bool publish_signals_ = true;

@@ -2,7 +2,6 @@
 
 #include <vector>
 #include <string>
-#include <functional>  // 保留用于兼容接口
 #include <iostream>
 #include <array>
 #include "hash_containers.h"
@@ -47,12 +46,8 @@ public:
 
     virtual ~EventBus() = default;
 
-    // 新接口：高性能 StaticDelegate
+    // 事件订阅接口：使用 StaticDelegate
     virtual void subscribe(EventType type, Handler handler) = 0;
-
-    // 兼容接口：接受 std::function（性能较低，用于过渡）
-    [[deprecated("请迁移到 StaticDelegate 接口以获得更好性能")]]
-    virtual void subscribe(EventType type, std::function<void(void*)> handler) = 0;
 
     virtual void publish(EventType type, void* data) = 0;
 
@@ -69,12 +64,8 @@ public:
 
     virtual ~ITimerService() = default;
 
-    // 新接口：高性能 StaticDelegate
+    // 定时器接口：使用 StaticDelegate
     virtual void add_timer(int interval_sec, TimerCallback callback, int phase_sec = 0) = 0;
-
-    // 兼容接口：接受 std::function（性能较低，用于过渡）
-    [[deprecated("请迁移到 StaticDelegate 接口以获得更好性能")]]
-    virtual void add_timer(int interval_sec, std::function<void()> callback, int phase_sec = 0) = 0;
 };
 
 // ==========================================
@@ -96,13 +87,11 @@ public:
 // ==========================================
 // 5. 二级策略插件接口 (Strategy Tree Leaf)
 // ==========================================
-// 注意：StrategyContext 使用 std::function 而非 StaticDelegate
-// 因为策略节点需要 lambda 捕获上下文（this, id等）
 struct StrategyContext {
     std::string strategy_id;
-    std::function<void(const OrderReq&)> send_order;
-    std::function<void(const SignalRecord&)> send_signal; // 新增：支持发送信号
-    std::function<void(const char* msg)> log;
+    StaticDelegate<void(const OrderReq&)> send_order;
+    StaticDelegate<void(const SignalRecord&)> send_signal; // 新增：支持发送信号
+    StaticDelegate<void(const char*)> log;
 };
 
 class IStrategyNode {

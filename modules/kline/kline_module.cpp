@@ -40,14 +40,12 @@ public:
         }
 
         // 订阅原始行情 -> 生成 1M K线
-        bus_->subscribe(EVENT_MARKET_DATA, [this](void* data) {
-            onTick((TickRecord*)data);
-        });
+        bus_->subscribe(EVENT_MARKET_DATA,
+                        StaticDelegate<void(void*)>::bind<KlineModule, &KlineModule::on_tick_event>(this));
 
         // 订阅 K线事件 -> 生成 1H/1D K线 (级联)
-        bus_->subscribe(EVENT_KLINE, [this](void* data) {
-            onKline((KlineRecord*)data);
-        });
+        bus_->subscribe(EVENT_KLINE,
+                        StaticDelegate<void(void*)>::bind<KlineModule, &KlineModule::on_kline_event>(this));
 
         LOG_INFO("[KlineModule] Initialized. Output: {} Debug: {}", output_path_, debug_ ? "ON" : "OFF");
     }
@@ -58,6 +56,14 @@ private:
     bool debug_ = false;
     FastHashMap<std::string, SymbolContext> contexts_;
     
+    void on_tick_event(void* data) {
+        onTick(static_cast<TickRecord*>(data));
+    }
+
+    void on_kline_event(void* data) {
+        onKline(static_cast<KlineRecord*>(data));
+    }
+
     // Writers
     std::unique_ptr<MmapWriter<KlineRecord>> writer_1m_;
     std::unique_ptr<MmapWriter<KlineRecord>> writer_1h_;

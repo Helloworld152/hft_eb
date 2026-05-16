@@ -3,7 +3,6 @@
 #include <vector>
 #include <memory>
 #include <string>
-#include <functional>  // 保留用于兼容接口
 #include <cstdint>
 #include "framework.h"
 #include "core_state.h"
@@ -13,13 +12,11 @@ struct PluginHandle;
 class EngineTimerAdapter;
 class MarketSnapshot; // 前置声明
 
-// Engine 内部定时任务项（支持 StaticDelegate 和 std::function）
+// Engine 内部定时任务项
 struct TimerTask {
     int interval_sec;
     uint64_t next_fire;
-    StaticDelegate<void()> sd_callback;           // 高性能回调
-    std::function<void()> func_callback;        // 兼容回调
-    bool is_static_delegate = false;            // true = 使用 sd_callback
+    StaticDelegate<void()> sd_callback;
 };
 
 class HftEngine {
@@ -60,11 +57,8 @@ private:
     std::unique_ptr<core::OrderService> order_service_;
     std::unique_ptr<core::AccountService> account_service_;
 
-    // 高性能接口：StaticDelegate
+    // 定时器注册入口
     void add_timer_impl(int interval_sec, StaticDelegate<void()> cb, int phase_sec = 0);
-    // 兼容接口：std::function（内部包装）
-    void add_timer_func(int interval_sec, std::function<void()>* cb, int phase_sec = 0);
-
     void run_due_timers();
 
     std::unique_ptr<MarketSnapshot> snapshot_impl_;

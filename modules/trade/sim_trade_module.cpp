@@ -29,26 +29,34 @@ public:
         }
 
 
-        bus_->subscribe(EVENT_ORDER_SEND, [this](void* d) {
-            this->onOrder(static_cast<OrderReq*>(d));
-        });
+        bus_->subscribe(EVENT_ORDER_SEND,
+                        StaticDelegate<void(void*)>::bind<SimTradeModule, &SimTradeModule::on_order_send_event>(this));
 
-        bus_->subscribe(EVENT_CANCEL_SEND, [this](void* d) {
-            this->onCancel(static_cast<CancelReq*>(d));
-        });
+        bus_->subscribe(EVENT_CANCEL_SEND,
+                        StaticDelegate<void(void*)>::bind<SimTradeModule, &SimTradeModule::on_cancel_send_event>(this));
 
-        bus_->subscribe(EVENT_QRY_ACC, [this](void* d) {
-            (void)d;
-            this->publishAccount();
-        });
+        bus_->subscribe(EVENT_QRY_ACC,
+                        StaticDelegate<void(void*)>::bind<SimTradeModule, &SimTradeModule::on_query_account_event>(this));
 
-        bus_->subscribe(EVENT_QRY_POS, [this](void* d) {
-            (void)d;
-            // 由 Position 模块根据成交维护持仓，这里不主动回报
-        });
+        bus_->subscribe(EVENT_QRY_POS,
+                        StaticDelegate<void(void*)>::bind<SimTradeModule, &SimTradeModule::on_query_position_event>(this));
     }
 
 private:
+    void on_order_send_event(void* d) {
+        onOrder(static_cast<OrderReq*>(d));
+    }
+
+    void on_cancel_send_event(void* d) {
+        onCancel(static_cast<CancelReq*>(d));
+    }
+
+    void on_query_account_event(void*) {
+        publishAccount();
+    }
+
+    void on_query_position_event(void*) {
+    }
 
     void onOrder(const OrderReq* req) {
         if (!req || req->symbol[0] == '\0' || req->volume <= 0) return;

@@ -25,10 +25,13 @@ public:
         LOG_INFO("[Strategy] Range: [{}, {}]", buy_thresh_, sell_thresh_);
 
         // 订阅行情
-        bus_->subscribe(EVENT_MARKET_DATA, [this](void* d) {
-            this->onTick(static_cast<TickRecord*>(d));
-        });
+        bus_->subscribe(EVENT_MARKET_DATA,
+                        StaticDelegate<void(void*)>::bind<StrategyModule, &StrategyModule::on_tick_event>(this));
 
+    }
+
+    void on_tick_event(void* d) {
+        onTick(static_cast<TickRecord*>(d));
     }
 
     void onTick(TickRecord* md) {

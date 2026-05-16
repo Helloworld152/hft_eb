@@ -34,21 +34,16 @@ public:
             OrderIDGenerator::instance().set_node_id(std::stoul(config.at("node_id")));
         }
 
-        bus_->subscribe(EVENT_POLL_GATEWAY, [this](void*) {
-            this->drain_events();
-        });
-        bus_->subscribe(EVENT_ORDER_SEND, [this](void* d) {
-            this->handle_order_send(static_cast<OrderReq*>(d));
-        });
-        bus_->subscribe(EVENT_CANCEL_REQ, [this](void* d) {
-            this->handle_cancel_req(static_cast<CancelReq*>(d));
-        });
-        bus_->subscribe(EVENT_QRY_POS, [this](void*) {
-            this->send_query(trade_gateway::CommandType::QueryPosition);
-        });
-        bus_->subscribe(EVENT_QRY_ACC, [this](void*) {
-            this->send_query(trade_gateway::CommandType::QueryAccount);
-        });
+        bus_->subscribe(EVENT_POLL_GATEWAY,
+                        StaticDelegate<void(void*)>::bind<GatewayPollModule, &GatewayPollModule::on_poll_gateway_event>(this));
+        bus_->subscribe(EVENT_ORDER_SEND,
+                        StaticDelegate<void(void*)>::bind<GatewayPollModule, &GatewayPollModule::on_order_send_event>(this));
+        bus_->subscribe(EVENT_CANCEL_REQ,
+                        StaticDelegate<void(void*)>::bind<GatewayPollModule, &GatewayPollModule::on_cancel_req_event>(this));
+        bus_->subscribe(EVENT_QRY_POS,
+                        StaticDelegate<void(void*)>::bind<GatewayPollModule, &GatewayPollModule::on_query_position_event>(this));
+        bus_->subscribe(EVENT_QRY_ACC,
+                        StaticDelegate<void(void*)>::bind<GatewayPollModule, &GatewayPollModule::on_query_account_event>(this));
 
         LOG_INFO("[GatewayPoll] Initialized. gateway_id={} cmd_shm={} rtn_shm={}",
                  gateway_id_, cmd_shm_, rtn_shm_);
@@ -78,6 +73,26 @@ public:
     }
 
 private:
+    void on_poll_gateway_event(void*) {
+        drain_events();
+    }
+
+    void on_order_send_event(void* d) {
+        handle_order_send(static_cast<OrderReq*>(d));
+    }
+
+    void on_cancel_req_event(void* d) {
+        handle_cancel_req(static_cast<CancelReq*>(d));
+    }
+
+    void on_query_position_event(void*) {
+        send_query(trade_gateway::CommandType::QueryPosition);
+    }
+
+    void on_query_account_event(void*) {
+        send_query(trade_gateway::CommandType::QueryAccount);
+    }
+
     static bool is_true(const std::string& value) {
         return value == "1" || value == "true" || value == "TRUE" || value == "yes";
     }

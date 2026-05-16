@@ -395,6 +395,15 @@ void fill_signal_from_json(const json& payload, SignalRecord* s) {
 
 class TestHarnessModule : public IModule {
 public:
+    struct EventSubscription {
+        TestHarnessModule* module = nullptr;
+        EventType type{};
+
+        void on_event(void* data) {
+            module->handle_event(type, data);
+        }
+    };
+
     void init(EventBus* bus, const ConfigMap& config, ITimerService* timer_svc = nullptr) override {
         (void)timer_svc;
         bus_ = bus;
@@ -425,29 +434,34 @@ public:
     }
 
 private:
-    void subscribe_all() {
-        auto handler = [this](EventType type, void* data) {
-            json payload = event_to_json(type, data);
-            if (payload.is_null() || payload.empty()) return;
+    void handle_event(EventType type, void* data) {
+        json payload = event_to_json(type, data);
+        if (payload.is_null() || payload.empty()) return;
 
-            std::unique_lock<std::mutex> lock(mtx_);
-            for (auto& pending : pending_) {
-                for (auto& exp : pending->expects) {
-                    if (exp.matched || exp.type != type) continue;
-                    if (json_subset_match(exp.match, payload)) {
-                        exp.matched = true;
-                        exp.sample = payload;
-                        auto now = std::chrono::steady_clock::now();
-                        exp.elapsed_ms = static_cast<uint64_t>(
-                            std::chrono::duration_cast<std::chrono::milliseconds>(now - pending->start).count());
-                        cv_.notify_all();
-                    }
+        std::unique_lock<std::mutex> lock(mtx_);
+        for (auto& pending : pending_) {
+            for (auto& exp : pending->expects) {
+                if (exp.matched || exp.type != type) continue;
+                if (json_subset_match(exp.match, payload)) {
+                    exp.matched = true;
+                    exp.sample = payload;
+                    auto now = std::chrono::steady_clock::now();
+                    exp.elapsed_ms = static_cast<uint64_t>(
+                        std::chrono::duration_cast<std::chrono::milliseconds>(now - pending->start).count());
+                    cv_.notify_all();
                 }
             }
-        };
+        }
+    }
 
+    void subscribe_all() {
         for (int t = 0; t < MAX_EVENTS; ++t) {
-            bus_->subscribe(static_cast<EventType>(t), [handler, t](void* d) { handler(static_cast<EventType>(t), d); });
+            auto sub = std::make_unique<EventSubscription>();
+            sub->module = this;
+            sub->type = static_cast<EventType>(t);
+            bus_->subscribe(static_cast<EventType>(t),
+                            StaticDelegate<void(void*)>::bind<EventSubscription, &EventSubscription::on_event>(sub.get()));
+            subscriptions_.push_back(std::move(sub));
         }
     }
 
@@ -642,6 +656,7 @@ private:
     std::mutex mtx_;
     std::condition_variable cv_;
     std::vector<std::shared_ptr<PendingRequest>> pending_;
+    std::vector<std::unique_ptr<EventSubscription>> subscriptions_;
 };
 
 EXPORT_MODULE(TestHarnessModule)

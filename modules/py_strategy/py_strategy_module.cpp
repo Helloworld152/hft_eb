@@ -73,14 +73,12 @@ public:
             LOG_ERROR("[PyStrategy] Failed to initialize python strategy. Disabled.");
         }
 
-        bus_->subscribe(EVENT_MARKET_DATA, [this](void* d) {
-            this->on_tick(static_cast<TickRecord*>(d));
-        });
+        bus_->subscribe(EVENT_MARKET_DATA,
+                        StaticDelegate<void(void*)>::bind<PyStrategyModule, &PyStrategyModule::on_tick_event>(this));
 
         if (py_on_kline_) {
-            bus_->subscribe(EVENT_KLINE, [this](void* d) {
-                this->on_kline(static_cast<KlineRecord*>(d));
-            });
+            bus_->subscribe(EVENT_KLINE,
+                            StaticDelegate<void(void*)>::bind<PyStrategyModule, &PyStrategyModule::on_kline_event>(this));
         }
 
         LOG_INFO("[PyStrategy] Initialized. module={} class={} on_tick={} on_kline={}",
@@ -100,6 +98,14 @@ public:
     }
 
 private:
+    void on_tick_event(void* d) {
+        on_tick(static_cast<TickRecord*>(d));
+    }
+
+    void on_kline_event(void* d) {
+        on_kline(static_cast<KlineRecord*>(d));
+    }
+
     static PyObject* py_send_order(PyObject* self, PyObject* args, PyObject* kwargs) {
         PyStrategyModule* mod = static_cast<PyStrategyModule*>(PyCapsule_GetPointer(self, "PyStrategyModule"));
         if (!mod || !mod->bus_) {

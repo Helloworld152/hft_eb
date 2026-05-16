@@ -96,46 +96,16 @@ public:
         );
 
         // 订阅事件 (生产者)
-        bus_->subscribe(EVENT_MARKET_DATA, [this](void* d) {
-            MonitorEvent evt;
-            evt.type = EVENT_MARKET_DATA;
-            std::memcpy(&evt.data.md, d, sizeof(TickRecord));
-            queue_.push(std::move(evt));
-        });
-
-        bus_->subscribe(EVENT_RTN_ORDER, [this](void* d) {
-            MonitorEvent evt;
-            evt.type = EVENT_RTN_ORDER;
-            std::memcpy(&evt.data.rtn, d, sizeof(OrderRtn));
-            queue_.push(std::move(evt)); 
-        });
-
-        bus_->subscribe(EVENT_RTN_TRADE, [this](void* d) {
-            MonitorEvent evt;
-            evt.type = EVENT_RTN_TRADE;
-            std::memcpy(&evt.data.trade, d, sizeof(TradeRtn));
-            queue_.push(std::move(evt));
-        });
-
-        bus_->subscribe(EVENT_ACC_UPDATE, [this](void* d) {
-            MonitorEvent evt;
-            evt.type = EVENT_ACC_UPDATE;
-            std::memcpy(&(evt.data.acc), d, sizeof(AccountDetail));
-            queue_.push(std::move(evt));
-        });
-
-        bus_->subscribe(EVENT_CONN_STATUS, [this](void* d) {
-            ConnectionStatus* cs = static_cast<ConnectionStatus*>(d);
-            {
-                std::lock_guard<std::mutex> lock(pos_mtx_); // Reuse mutex
-                std::string key = std::string(cs->account_id) + "_" + cs->source;
-                conn_cache_[key] = *cs;
-            }
-            MonitorEvent evt;
-            evt.type = EVENT_CONN_STATUS;
-            std::memcpy(&(evt.data.conn), d, sizeof(ConnectionStatus));
-            queue_.push(std::move(evt));
-        });
+        bus_->subscribe(EVENT_MARKET_DATA,
+                        StaticDelegate<void(void*)>::bind<MonitorModule, &MonitorModule::on_market_data_event>(this));
+        bus_->subscribe(EVENT_RTN_ORDER,
+                        StaticDelegate<void(void*)>::bind<MonitorModule, &MonitorModule::on_order_rtn_event>(this));
+        bus_->subscribe(EVENT_RTN_TRADE,
+                        StaticDelegate<void(void*)>::bind<MonitorModule, &MonitorModule::on_trade_rtn_event>(this));
+        bus_->subscribe(EVENT_ACC_UPDATE,
+                        StaticDelegate<void(void*)>::bind<MonitorModule, &MonitorModule::on_account_update_event>(this));
+        bus_->subscribe(EVENT_CONN_STATUS,
+                        StaticDelegate<void(void*)>::bind<MonitorModule, &MonitorModule::on_conn_status_event>(this));
     }
 
     void start() override {
@@ -162,6 +132,47 @@ public:
     }
 
 private:
+    void on_market_data_event(void* d) {
+        MonitorEvent evt;
+        evt.type = EVENT_MARKET_DATA;
+        std::memcpy(&evt.data.md, d, sizeof(TickRecord));
+        queue_.push(std::move(evt));
+    }
+
+    void on_order_rtn_event(void* d) {
+        MonitorEvent evt;
+        evt.type = EVENT_RTN_ORDER;
+        std::memcpy(&evt.data.rtn, d, sizeof(OrderRtn));
+        queue_.push(std::move(evt));
+    }
+
+    void on_trade_rtn_event(void* d) {
+        MonitorEvent evt;
+        evt.type = EVENT_RTN_TRADE;
+        std::memcpy(&evt.data.trade, d, sizeof(TradeRtn));
+        queue_.push(std::move(evt));
+    }
+
+    void on_account_update_event(void* d) {
+        MonitorEvent evt;
+        evt.type = EVENT_ACC_UPDATE;
+        std::memcpy(&(evt.data.acc), d, sizeof(AccountDetail));
+        queue_.push(std::move(evt));
+    }
+
+    void on_conn_status_event(void* d) {
+        ConnectionStatus* cs = static_cast<ConnectionStatus*>(d);
+        {
+            std::lock_guard<std::mutex> lock(pos_mtx_);
+            std::string key = std::string(cs->account_id) + "_" + cs->source;
+            conn_cache_[key] = *cs;
+        }
+        MonitorEvent evt;
+        evt.type = EVENT_CONN_STATUS;
+        std::memcpy(&(evt.data.conn), d, sizeof(ConnectionStatus));
+        queue_.push(std::move(evt));
+    }
+
     void requestSnapshots() {
         if (!bus_) return;
         bus_->publish(EVENT_QRY_POS, nullptr);

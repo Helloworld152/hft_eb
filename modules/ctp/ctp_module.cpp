@@ -12,10 +12,8 @@ public:
         LOG_INFO("[CTP] Initialized for {}", symbol_);
         
         // 订阅报单请求，模拟发单
-        bus_->subscribe(EVENT_ORDER_REQ, [this](void* d) {
-            auto req = static_cast<OrderReq*>(d);
-            LOG_INFO("[CTP] -> Sending Order to Exchange: {} @ {}", req->direction, req->price);
-        });
+        bus_->subscribe(EVENT_ORDER_REQ,
+                        StaticDelegate<void(void*)>::bind<CtpModule, &CtpModule::on_order_req_event>(this));
     }
 
     void start() override {
@@ -47,6 +45,11 @@ public:
     }
 
 private:
+    void on_order_req_event(void* d) {
+        auto req = static_cast<OrderReq*>(d);
+        LOG_INFO("[CTP] -> Sending Order to Exchange: {} @ {}", req->direction, req->price);
+    }
+
     EventBus* bus_;
     std::string symbol_;
     std::thread worker_;

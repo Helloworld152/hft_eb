@@ -43,21 +43,17 @@ public:
         fs::create_directories(fs::path(order_dir_) / "error");
 
         // 订阅行情用于自动定价
-        bus_->subscribe(EVENT_MARKET_DATA, [this](void* d) {
-            auto* tick = static_cast<TickRecord*>(d);
-            ticks_[tick->symbol_id] = *tick;
-        });
+        bus_->subscribe(EVENT_MARKET_DATA,
+                        StaticDelegate<void(void*)>::bind<SweepTraderModule, &SweepTraderModule::on_market_data_event>(this));
 
         // 注册目录扫描定时器
         if (timer_svc_) {
-            timer_svc_->add_timer(scan_ms / 1000, [this]() {
-                this->scanDirectory();
-            });
+            timer_svc_->add_timer(scan_ms / 1000,
+                                  StaticDelegate<void()>::bind<SweepTraderModule, &SweepTraderModule::scanDirectory>(this));
             
             // TWAP 轮询检查 (每秒一次)
-            timer_svc_->add_timer(1, [this]() {
-                this->checkTwapTasks();
-            });
+            timer_svc_->add_timer(1,
+                                  StaticDelegate<void()>::bind<SweepTraderModule, &SweepTraderModule::checkTwapTasks>(this));
         }
 
         LOG_INFO("[SweepTrader] Initialized. Dir: {} Strategy: {}", order_dir_, price_strategy_);
@@ -69,6 +65,11 @@ public:
                 processFile(entry.path());
             }
         }
+    }
+
+    void on_market_data_event(void* d) {
+        auto* tick = static_cast<TickRecord*>(d);
+        ticks_[tick->symbol_id] = *tick;
     }
 
     void processFile(const fs::path& path) {

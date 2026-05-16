@@ -18,6 +18,29 @@
 // ------------------------------
 class ParallelStrategyTreeModule : public IModule {
 public:
+    struct StrategyNodeCallbacks {
+        EventBus* bus = nullptr;
+        std::string strategy_id;
+        MPMCRingBuffer<SignalRecord>* signal_queue = nullptr;
+        std::atomic<bool>* running = nullptr;
+
+        void send_order(const OrderReq& req) {
+            bus->publish(EVENT_ORDER_REQ, const_cast<OrderReq*>(&req));
+        }
+
+        void send_signal(const SignalRecord& sig) {
+            SignalRecord internal_sig = sig;
+            std::strncpy(internal_sig.source_id, strategy_id.c_str(), sizeof(internal_sig.source_id) - 1);
+            while (running->load(std::memory_order_relaxed) && !signal_queue->push(internal_sig)) {
+                _mm_pause();
+            }
+        }
+
+        void log(const char* msg) {
+            LOG_INFO("[策略-{}] {}", strategy_id, msg);
+        }
+    };
+
     void init(EventBus* bus, const ConfigMap& config, ITimerService* timer_svc = nullptr) override {
         (void)timer_svc;
         bus_ = bus;
@@ -134,17 +157,14 @@ public:
         }
 
         // Event routing
-        bus_->subscribe(EVENT_MARKET_DATA, [this](void* d) {
-            on_tick(static_cast<TickRecord*>(d));
-        });
+        bus_->subscribe(EVENT_MARKET_DATA,
+                        StaticDelegate<void(void*)>::bind<ParallelStrategyTreeModule, &ParallelStrategyTreeModule::on_market_data_event>(this));
 
-        bus_->subscribe(EVENT_KLINE, [this](void* d) {
-            on_kline(static_cast<KlineRecord*>(d));
-        });
+        bus_->subscribe(EVENT_KLINE,
+                        StaticDelegate<void(void*)>::bind<ParallelStrategyTreeModule, &ParallelStrategyTreeModule::on_kline_bus_event>(this));
 
-        bus_->subscribe(EVENT_RTN_ORDER, [this](void* d) {
-            on_order_update(static_cast<OrderRtn*>(d));
-        });
+        bus_->subscribe(EVENT_RTN_ORDER,
+                        StaticDelegate<void(void*)>::bind<ParallelStrategyTreeModule, &ParallelStrategyTreeModule::on_order_update_bus_event>(this));
     }
 
     void start() override {
@@ -194,6 +214,7 @@ private:
         std::string id;
         std::unique_ptr<IStrategyNode> node;
         std::unique_ptr<StrategyContext> ctx;
+        std::unique_ptr<StrategyNodeCallbacks> callbacks;
     };
 
     struct ShardContext {
@@ -218,17 +239,14 @@ private:
 
         auto ctx = std::make_unique<StrategyContext>();
         ctx->strategy_id = id;
-        ctx->send_order = [this](const OrderReq& req) {
-            bus_->publish(EVENT_ORDER_REQ, const_cast<OrderReq*>(&req));
-        };
-        ctx->send_signal = [this, id](const SignalRecord& sig) {
-            SignalRecord internal_sig = sig;
-            std::strncpy(internal_sig.source_id, id.c_str(), sizeof(internal_sig.source_id) - 1);
-            enqueue_signal(internal_sig);
-        };
-        ctx->log = [id](const char* msg) {
-            LOG_INFO("[策略-{}] {}", id, msg);
-        };
+        auto callbacks = std::make_unique<StrategyNodeCallbacks>();
+        callbacks->bus = bus_;
+        callbacks->strategy_id = id;
+        callbacks->signal_queue = &signal_queue_;
+        callbacks->running = &running_;
+        ctx->send_order = StaticDelegate<void(const OrderReq&)>::bind<StrategyNodeCallbacks, &StrategyNodeCallbacks::send_order>(callbacks.get());
+        ctx->send_signal = StaticDelegate<void(const SignalRecord&)>::bind<StrategyNodeCallbacks, &StrategyNodeCallbacks::send_signal>(callbacks.get());
+        ctx->log = StaticDelegate<void(const char*)>::bind<StrategyNodeCallbacks, &StrategyNodeCallbacks::log>(callbacks.get());
 
         strategy->init(ctx.get(), node_config);
 
@@ -236,6 +254,7 @@ private:
         inst.id = id;
         inst.node.reset(strategy);
         inst.ctx = std::move(ctx);
+        inst.callbacks = std::move(callbacks);
         target.push_back(std::move(inst));
     }
 
@@ -243,6 +262,18 @@ private:
         while (running_ && !signal_queue_.push(sig)) {
             _mm_pause();
         }
+    }
+
+    void on_market_data_event(void* d) {
+        on_tick(static_cast<TickRecord*>(d));
+    }
+
+    void on_kline_bus_event(void* d) {
+        on_kline(static_cast<KlineRecord*>(d));
+    }
+
+    void on_order_update_bus_event(void* d) {
+        on_order_update(static_cast<OrderRtn*>(d));
     }
 
     void drain_signals() {

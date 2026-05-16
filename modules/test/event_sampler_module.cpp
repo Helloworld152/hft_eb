@@ -273,6 +273,15 @@ json event_to_json(EventType type, void* data) {
 
 class EventSamplerModule : public IModule {
 public:
+    struct EventSubscription {
+        EventSamplerModule* module = nullptr;
+        EventType type{};
+
+        void on_event(void* data) {
+            module->on_event(type, data);
+        }
+    };
+
     void init(EventBus* bus, const ConfigMap& config, ITimerService* timer_svc = nullptr) override {
         bus_ = bus;
         (void)timer_svc;
@@ -318,9 +327,12 @@ private:
         }
 
         for (auto type : event_types_) {
-            bus_->subscribe(type, [this, type](void* data) {
-                on_event(type, data);
-            });
+            auto sub = std::make_unique<EventSubscription>();
+            sub->module = this;
+            sub->type = type;
+            bus_->subscribe(type,
+                            StaticDelegate<void(void*)>::bind<EventSubscription, &EventSubscription::on_event>(sub.get()));
+            subscriptions_.push_back(std::move(sub));
         }
     }
 
@@ -356,6 +368,7 @@ private:
     uint64_t printed_ = 0;
 
     std::vector<EventType> event_types_;
+    std::vector<std::unique_ptr<EventSubscription>> subscriptions_;
     FastHashMap<EventType, uint64_t> counters_;
     FastHashMap<EventType, std::string> event_name_map_ = build_event_name_map();
 };

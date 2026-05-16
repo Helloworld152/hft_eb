@@ -113,10 +113,14 @@ public:
         ccapi::Subscription sub(exchange_, "", fields, "", "em", credential_, proxy_);
         session_->subscribe(sub);
 
-        bus_->subscribe(EVENT_ORDER_SEND, [this](void* d) { this->send_order(static_cast<OrderReq*>(d)); });
-        bus_->subscribe(EVENT_CANCEL_SEND, [this](void* d) { this->cancel_order(static_cast<CancelReq*>(d)); });
-        bus_->subscribe(EVENT_QRY_ACC, [this](void* d) { (void)d; this->query_account(); });
-        bus_->subscribe(EVENT_QRY_POS, [this](void* d) { (void)d; this->query_positions(); });
+        bus_->subscribe(EVENT_ORDER_SEND,
+                        StaticDelegate<void(void*)>::bind<BinanceUsdsTradeModule, &BinanceUsdsTradeModule::on_order_send_event>(this));
+        bus_->subscribe(EVENT_CANCEL_SEND,
+                        StaticDelegate<void(void*)>::bind<BinanceUsdsTradeModule, &BinanceUsdsTradeModule::on_cancel_send_event>(this));
+        bus_->subscribe(EVENT_QRY_ACC,
+                        StaticDelegate<void(void*)>::bind<BinanceUsdsTradeModule, &BinanceUsdsTradeModule::on_query_account_event>(this));
+        bus_->subscribe(EVENT_QRY_POS,
+                        StaticDelegate<void(void*)>::bind<BinanceUsdsTradeModule, &BinanceUsdsTradeModule::on_query_positions_event>(this));
 
         std::cout << "[CCAPI-BINANCE-USDS] Initialized. Account=" << account_id_ << " BaseAsset=" << base_asset_ << std::endl;
     }
@@ -166,6 +170,22 @@ public:
                     break;
             }
         }
+    }
+
+    void on_order_send_event(void* d) {
+        send_order(static_cast<OrderReq*>(d));
+    }
+
+    void on_cancel_send_event(void* d) {
+        cancel_order(static_cast<CancelReq*>(d));
+    }
+
+    void on_query_account_event(void*) {
+        query_account();
+    }
+
+    void on_query_positions_event(void*) {
+        query_positions();
     }
 
 private:

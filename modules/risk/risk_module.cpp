@@ -16,12 +16,15 @@ public:
         LOG_INFO("[Risk] Initialized. Max Orders/Sec: {}", max_orders_per_sec_);
 
         // 订阅原始报单请求
-        bus_->subscribe(EVENT_ORDER_REQ, [this](void* d) {
-            this->checkRisk(static_cast<OrderReq*>(d));
-        });
+        bus_->subscribe(EVENT_ORDER_REQ,
+                        StaticDelegate<void(void*)>::bind<RiskModule, &RiskModule::on_order_req_event>(this));
     }
 
 private:
+    void on_order_req_event(void* d) {
+        checkRisk(static_cast<OrderReq*>(d));
+    }
+
     void checkRisk(OrderReq* req) {
         std::lock_guard<std::mutex> lock(mtx_);
         

@@ -42,9 +42,8 @@ public:
             LOG_INFO("[Replay] 模块初始化完成。Mmap 基础路径: {}", file_path_);
         }
 
-        bus_->subscribe(EVENT_POLL_REPLAY, [this](void*) {
-            this->poll_once();
-        });
+        bus_->subscribe(EVENT_POLL_REPLAY,
+                        StaticDelegate<void(void*)>::bind<ReplayModule, &ReplayModule::on_poll_replay>(this));
     }
 
     void start() override {
@@ -59,6 +58,10 @@ public:
     }
 
 private:
+    void on_poll_replay(void*) {
+        poll_once();
+    }
+
     void poll_once() {
         if (!running_) return;
 

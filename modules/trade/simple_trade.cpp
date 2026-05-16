@@ -16,9 +16,12 @@ public:
         LOG_INFO("[{}] Initialized. Subscribing to EVENT_ORDER_REQ...", id_);
 
         // 订阅报单请求事件
-        bus_->subscribe(EVENT_ORDER_REQ, [this](void* d) {
-            this->onOrder(static_cast<OrderReq*>(d));
-        });
+        bus_->subscribe(EVENT_ORDER_REQ,
+                        StaticDelegate<void(void*)>::bind<SimpleTradeModule, &SimpleTradeModule::on_order_event>(this));
+    }
+
+    void on_order_event(void* d) {
+        onOrder(static_cast<OrderReq*>(d));
     }
 
     void onOrder(OrderReq* req) {
