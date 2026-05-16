@@ -1,6 +1,6 @@
 #include "framework.h"
 #include "protocol.h"
-#include "../../core/include/symbol_manager.h"
+#include "symbol_manager.h"
 
 #include <arrow/api.h>
 #include <arrow/io/api.h>

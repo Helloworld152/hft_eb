@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <type_traits>
 
-#include "../../../core/include/protocol.h"
+#include "protocol.h"
 
 namespace trade_gateway {
 

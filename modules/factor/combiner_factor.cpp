@@ -1,4 +1,4 @@
-#include "../../include/factor/factor_node.h"
+#include "factor/factor_node.h"
 #include <yaml-cpp/yaml.h>
 #include <vector>
 #include <string>

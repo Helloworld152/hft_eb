@@ -1,5 +1,5 @@
-#include "../../include/framework.h"
-#include "../../core/include/queue.h"
+#include "framework.h"
+#include "queue.h"
 
 #include <atomic>
 #include <chrono>

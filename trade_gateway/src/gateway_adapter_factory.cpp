@@ -1,5 +1,5 @@
-#include "../include/trade_gateway/gateway_adapter_factory.h"
-#include "../include/trade_gateway/ctp_gateway_adapter.h"
+#include "trade_gateway/gateway_adapter_factory.h"
+#include "trade_gateway/ctp_gateway_adapter.h"
 #include <stdexcept>
 
 namespace trade_gateway {

@@ -1,6 +1,6 @@
-#include "../../include/framework.h"
-#include "../../core/include/queue.h"
-#include "../../core/include/symbol_manager.h"
+#include "framework.h"
+#include "queue.h"
+#include "symbol_manager.h"
 #include <dlfcn.h>
 #include <yaml-cpp/yaml.h>
 #include <atomic>

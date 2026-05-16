@@ -1,5 +1,5 @@
-#include "../../include/framework.h"
-#include "../../core/include/symbol_manager.h"
+#include "framework.h"
+#include "symbol_manager.h"
 #include <Python.h>
 #include <vector>
 #include <sstream>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "protocol.h"
-#include "../../include/logging.h"
+#include "logging.h"
 
 #include <sys/mman.h>
 #include <sys/stat.h>

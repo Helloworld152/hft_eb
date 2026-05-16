@@ -1,6 +1,6 @@
-#include "../../include/framework.h"
-#include "../../include/factor/factor_node.h"
-#include "../../core/include/symbol_manager.h"
+#include "framework.h"
+#include "factor/factor_node.h"
+#include "symbol_manager.h"
 #include <yaml-cpp/yaml.h>
 #include <dlfcn.h>
 #include <vector>

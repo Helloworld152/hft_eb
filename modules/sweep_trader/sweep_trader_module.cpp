@@ -1,6 +1,6 @@
-#include "../../include/framework.h"
-#include "../../core/include/symbol_manager.h"
-#include "../../core/include/market_snapshot.h"
+#include "framework.h"
+#include "symbol_manager.h"
+#include "market_snapshot.h"
 #include <fstream>
 #include <sstream>
 #include <filesystem>

@@ -1,6 +1,6 @@
-#include "../../include/framework.h"
-#include "../../core/include/core_state.h"
-#include "../../core/include/symbol_manager.h"
+#include "framework.h"
+#include "core_state.h"
+#include "symbol_manager.h"
 #include "ccapi_cpp/ccapi_macro.h"
 #include "ccapi_cpp/ccapi_session.h"
 

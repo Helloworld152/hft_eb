@@ -1,4 +1,4 @@
-#include "../../include/framework.h"
+#include "framework.h"
 #include <iostream>
 #include <cstring>
 #include <vector>

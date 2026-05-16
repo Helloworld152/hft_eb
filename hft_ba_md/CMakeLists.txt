@@ -12,6 +12,8 @@ get_filename_component(HFT_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 # Include paths
 include_directories(include)
 include_directories(../include)
+include_directories(../engine/include)
+include_directories(../infra/include)
 include_directories(../core/include)
 # Library paths
 link_directories(${CMAKE_SOURCE_DIR}/../bin)
@@ -19,7 +21,7 @@ link_directories(${CMAKE_SOURCE_DIR}/../bin)
 # Source files
 set(BA_SOURCES
     src/main.cpp
-    ../src/logging.cpp
+    ../engine/src/logging.cpp
     src/Recorder.cpp
 )
 

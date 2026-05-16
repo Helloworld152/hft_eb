@@ -1,6 +1,6 @@
 #include <thread>
-#include "../include/engine.h"
-#include "../include/logging.h"
+#include "engine.h"
+#include "logging.h"
 
 int main(int argc, char* argv[]) {
     // 0. 基础环境准备

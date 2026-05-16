@@ -1,5 +1,5 @@
 #include "Recorder.h"
-#include "../../include/logging.h"
+#include "logging.h"
 #include <iostream>
 #include <csignal>
 #include <atomic>

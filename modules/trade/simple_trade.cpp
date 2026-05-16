@@ -1,4 +1,4 @@
-#include "../../include/framework.h"
+#include "framework.h"
 #include <string>
 
 class SimpleTradeModule : public IModule {

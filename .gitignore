@@ -2,6 +2,7 @@ bin/
 data/
 build/
 .cache/
+.clangd
 log/
 demo/
 flow_log/

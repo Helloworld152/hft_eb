@@ -1,4 +1,4 @@
-#include "../../include/framework.h"
+#include "framework.h"
 #include <thread>
 #include <chrono>
 #include <atomic>

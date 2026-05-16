@@ -6,7 +6,7 @@
 #include <functional>  // 保留用于兼容接口
 #include <cstdint>
 #include "framework.h"
-#include "../core/include/core_state.h"
+#include "core_state.h"
 
 class EventBusImpl;
 struct PluginHandle;

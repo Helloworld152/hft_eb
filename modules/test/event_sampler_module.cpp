@@ -1,5 +1,5 @@
-#include "../../include/framework.h"
-#include "../../core/include/protocol.h"
+#include "framework.h"
+#include "protocol.h"
 #include <nlohmann/json.hpp>
 
 #include <algorithm>

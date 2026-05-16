@@ -1,7 +1,7 @@
-#include "../include/trade_gateway/ctp_gateway_adapter.h"
+#include "trade_gateway/ctp_gateway_adapter.h"
 
-#include "../../core/include/symbol_manager.h"
-#include "../../include/logging.h"
+#include "symbol_manager.h"
+#include "logging.h"
 
 #include <chrono>
 #include <cstdlib>

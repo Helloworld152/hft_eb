@@ -130,6 +130,8 @@ endif()
 
 # Global Includes
 include_directories(include)
+include_directories(engine/include)
+include_directories(infra/include)
 include_directories(core/include)
 
 add_library(hft_hash_containers INTERFACE)
@@ -138,7 +140,7 @@ target_link_libraries(hft_hash_containers INTERFACE absl::flat_hash_map absl::fl
 # ==========================================
 # 0. 核心基础设施库 (共享单例)
 # ==========================================
-add_library(hft_logging STATIC src/logging.cpp)
+add_library(hft_logging STATIC engine/src/logging.cpp)
 set_target_properties(hft_logging PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(hft_logging PUBLIC yaml-cpp spdlog::spdlog)
 
@@ -349,7 +351,7 @@ target_include_directories(mod_sweep_trader PRIVATE include core/include)
 target_link_libraries(mod_sweep_trader PRIVATE hft_core)
 
 # 7. 编译主程序
-add_executable(hft_engine src/main.cpp src/engine.cpp)
-target_include_directories(hft_engine PRIVATE include)
+add_executable(hft_engine engine/src/main.cpp engine/src/engine.cpp)
+target_include_directories(hft_engine PRIVATE include engine/include infra/include)
 target_link_libraries(hft_engine PRIVATE hft_core hft_logging dl pthread yaml-cpp)
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")

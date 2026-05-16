@@ -1,6 +1,6 @@
 #include "Recorder.h"
 #include "symbol_manager.h"
-#include "../../include/logging.h"
+#include "logging.h"
 #include "ccapi_cpp/ccapi_session.h"
 #include <yaml-cpp/yaml.h>
 #include <map>

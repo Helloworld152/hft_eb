@@ -1,6 +1,6 @@
-#include "../../include/framework.h"
-#include "../../core/include/core_state.h"
-#include "../../core/include/symbol_manager.h"
+#include "framework.h"
+#include "core_state.h"
+#include "symbol_manager.h"
 #include <atomic>
 #include <cstring>
 #include <string>

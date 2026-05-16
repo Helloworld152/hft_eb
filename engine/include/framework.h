@@ -8,7 +8,7 @@
 #include "hash_containers.h"
 #include "logging.h"
 #include "static_delegate.h"
-#include "../core/include/protocol.h" // 引入 TickRecord 定义
+#include "protocol.h" // 引入 TickRecord 定义
 
 // ==========================================
 // 1. 基础数据结构

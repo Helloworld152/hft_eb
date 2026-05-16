@@ -1,5 +1,5 @@
 #include "Recorder.h"
-#include "../../include/logging.h"
+#include "logging.h"
 #include <atomic>
 #include <csignal>
 #include <chrono>

@@ -1,5 +1,5 @@
-#include "../include/trade_gateway/gateway_runtime.h"
-#include "../../include/logging.h"
+#include "trade_gateway/gateway_runtime.h"
+#include "logging.h"
 
 #include <csignal>
 #include <iostream>

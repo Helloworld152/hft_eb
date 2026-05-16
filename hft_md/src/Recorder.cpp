@@ -1,7 +1,7 @@
 #include "Recorder.h"
 #include "mmap_util.h"
 #include "symbol_manager.h"
-#include "../../include/logging.h"
+#include "logging.h"
 #include <yaml-cpp/yaml.h>
 #include <chrono>
 #include <cstring>

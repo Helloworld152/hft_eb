@@ -1,4 +1,4 @@
-#include "../../include/factor/factor_node.h"
+#include "factor/factor_node.h"
 
 class SpreadFactor : public IFactorNode {
 public:

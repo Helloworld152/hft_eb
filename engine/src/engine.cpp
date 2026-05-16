@@ -1,7 +1,7 @@
-#include "../include/engine.h"
-#include "../core/include/core_state.h"
-#include "../core/include/symbol_manager.h"
-#include "../core/include/market_snapshot.h"
+#include "engine.h"
+#include "core_state.h"
+#include "symbol_manager.h"
+#include "market_snapshot.h"
 #include <dlfcn.h>
 #include <thread>
 #include <chrono>

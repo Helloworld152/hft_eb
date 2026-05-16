@@ -1,4 +1,4 @@
-#include "../include/logging.h"
+#include "logging.h"
 
 #include <yaml-cpp/yaml.h>
 

@@ -1,8 +1,8 @@
-#include "../include/trade_gateway/gateway_runtime.h"
+#include "trade_gateway/gateway_runtime.h"
 
-#include "../../core/include/symbol_manager.h"
-#include "../../include/logging.h"
-#include "../include/trade_gateway/gateway_adapter_factory.h"
+#include "symbol_manager.h"
+#include "logging.h"
+#include "trade_gateway/gateway_adapter_factory.h"
 
 #include <chrono>
 #include <cstring>

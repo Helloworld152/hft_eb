@@ -1,4 +1,4 @@
-#include "../include/trade_gateway/gateway_config.h"
+#include "trade_gateway/gateway_config.h"
 
 #include <yaml-cpp/yaml.h>
 

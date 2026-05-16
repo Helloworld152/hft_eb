@@ -1,5 +1,5 @@
-#include "../include/symbol_manager.h"
-#include "../../include/logging.h"
+#include "symbol_manager.h"
+#include "logging.h"
 #include <filesystem>
 
 SymbolManager& SymbolManager::instance() {

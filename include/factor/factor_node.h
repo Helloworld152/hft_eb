@@ -2,8 +2,8 @@
 
 #include <string>
 #include <vector>
-#include "../framework.h"
-#include "../../core/include/protocol.h"
+#include "framework.h"
+#include "protocol.h"
 
 // 计算上下文：由 FactorDAGModule 注入
 struct FactorContext {

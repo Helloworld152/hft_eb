@@ -34,7 +34,7 @@ endif()
 
 add_executable(hft_trade_gateway
     src/main.cpp
-    ../src/logging.cpp
+    ../engine/src/logging.cpp
     src/gateway_adapter_factory.cpp
     src/gateway_runtime.cpp
     src/gateway_config.cpp
@@ -51,12 +51,16 @@ target_include_directories(hft_trade_gateway
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${HFT_REPO_ROOT}/include
+        ${HFT_REPO_ROOT}/engine/include
+        ${HFT_REPO_ROOT}/infra/include
         ${HFT_REPO_ROOT}/core/include
         ${HFT_REPO_ROOT}/third_party/ctp/include)
 
 target_include_directories(hft_trade_gateway_ping
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${HFT_REPO_ROOT}/engine/include
+        ${HFT_REPO_ROOT}/infra/include
         ${HFT_REPO_ROOT}/core/include)
 
 target_link_directories(hft_trade_gateway

@@ -1,4 +1,4 @@
-#include "../include/tick_window_snapshot.h"
+#include "tick_window_snapshot.h"
 #include <immintrin.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
