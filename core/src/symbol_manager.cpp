@@ -41,6 +41,24 @@ void SymbolManager::load(const std::string& path) {
             std::string symbol = (second == std::string::npos) ? rest : rest.substr(0, second);
             symbol.erase(symbol.find_last_not_of(" \n\r\t") + 1);
 
+            auto id_it = id_to_symbol_.find(id);
+            if (id_it != id_to_symbol_.end() && id_it->second != symbol) {
+                LOG_ERROR("[SymbolManager] Duplicate symbol id {} for '{}' and '{}', skip later entry.",
+                          id,
+                          id_it->second,
+                          symbol);
+                continue;
+            }
+
+            auto symbol_it = symbol_to_id_.find(symbol);
+            if (symbol_it != symbol_to_id_.end() && symbol_it->second != id) {
+                LOG_ERROR("[SymbolManager] Duplicate symbol '{}' for ids {} and {}, skip later entry.",
+                          symbol,
+                          symbol_it->second,
+                          id);
+                continue;
+            }
+
             double multiplier = 1.0;
             if (second != std::string::npos) {
                 std::string mul_str = rest.substr(second + 1);
@@ -53,6 +71,11 @@ void SymbolManager::load(const std::string& path) {
             id_to_symbol_[id] = symbol;
             symbol_to_id_[symbol] = id;
             id_to_multiplier_[id] = multiplier;
+            if (id_to_index_.find(id) == id_to_index_.end()) {
+                uint32_t index = static_cast<uint32_t>(index_to_id_.size());
+                id_to_index_[id] = index;
+                index_to_id_.push_back(id);
+            }
         } catch (...) {
             continue;
         }
@@ -61,7 +84,7 @@ void SymbolManager::load(const std::string& path) {
     LOG_INFO("[SymbolManager] Loaded {} symbols.", symbol_to_id_.size());
 }
 
-uint64_t SymbolManager::get_id(const char* symbol) const {
+uint64_t SymbolManager::get_id(std::string_view symbol) const {
     auto it = symbol_to_id_.find(symbol);
     if (it != symbol_to_id_.end()) {
         return it->second;
@@ -77,6 +100,30 @@ const char* SymbolManager::get_symbol(uint64_t id) const {
     return "UNKNOWN";
 }
 
+uint32_t SymbolManager::get_index(uint64_t id) const {
+    auto it = id_to_index_.find(id);
+    if (it != id_to_index_.end()) {
+        return it->second;
+    }
+    return std::numeric_limits<uint32_t>::max();
+}
+
+uint32_t SymbolManager::get_index(std::string_view symbol) const {
+    uint64_t id = get_id(symbol);
+    return id ? get_index(id) : std::numeric_limits<uint32_t>::max();
+}
+
+uint64_t SymbolManager::get_symbol_id_by_index(uint32_t index) const {
+    if (index < index_to_id_.size()) {
+        return index_to_id_[index];
+    }
+    return 0;
+}
+
+size_t SymbolManager::symbol_count() const {
+    return index_to_id_.size();
+}
+
 double SymbolManager::get_multiplier(uint64_t id) const {
     auto it = id_to_multiplier_.find(id);
     if (it != id_to_multiplier_.end())
@@ -84,7 +131,7 @@ double SymbolManager::get_multiplier(uint64_t id) const {
     return 1.0;
 }
 
-double SymbolManager::get_multiplier(const char* symbol) const {
+double SymbolManager::get_multiplier(std::string_view symbol) const {
     uint64_t id = get_id(symbol);
     return id ? get_multiplier(id) : 1.0;
 }
