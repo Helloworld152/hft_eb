@@ -11,6 +11,10 @@ std::once_flag g_py_init_flag;
 
 void ensure_python_initialized() {
     std::call_once(g_py_init_flag, []() {
+        if (Py_IsInitialized()) {
+            LOG_INFO("[PyStrategy] Reusing existing Python runtime.");
+            return;
+        }
         Py_Initialize();
         PyEval_InitThreads();
         PyEval_SaveThread();
@@ -44,6 +48,26 @@ void dict_set_str(PyObject* dict, const char* key, const char* v) {
     PyObject* val = PyUnicode_FromString(v ? v : "");
     PyDict_SetItemString(dict, key, val);
     Py_DECREF(val);
+}
+
+PyObject* safe_get_callable(PyObject* obj, const char* name) {
+    PyErr_Clear();
+    PyObject* fn = PyObject_GetAttrString(obj, name);
+    if (fn && !PyCallable_Check(fn)) {
+        Py_DECREF(fn);
+        fn = nullptr;
+    }
+    PyErr_Clear();
+    return fn;
+}
+
+PyObject* first_available_callable(PyObject* obj, const std::vector<const char*>& names) {
+    for (const char* name : names) {
+        if (PyObject* fn = safe_get_callable(obj, name)) {
+            return fn;
+        }
+    }
+    return nullptr;
 }
 }
 
@@ -80,18 +104,38 @@ public:
             bus_->subscribe(EVENT_KLINE,
                             StaticDelegate<void(void*)>::bind<PyStrategyModule, &PyStrategyModule::on_kline_event>(this));
         }
+        if (py_on_order_) {
+            bus_->subscribe(EVENT_RTN_ORDER,
+                            StaticDelegate<void(void*)>::bind<PyStrategyModule, &PyStrategyModule::on_order_event>(this));
+        }
+        if (py_on_trade_) {
+            bus_->subscribe(EVENT_RTN_TRADE,
+                            StaticDelegate<void(void*)>::bind<PyStrategyModule, &PyStrategyModule::on_trade_event>(this));
+        }
 
-        LOG_INFO("[PyStrategy] Initialized. module={} class={} on_tick={} on_kline={}",
+        LOG_INFO("[PyStrategy] Initialized. module={} class={} on_tick={} on_kline={} on_order={} on_trade={}",
                  py_module_,
                  py_class_,
                  py_on_tick_ ? "yes" : "no",
-                 py_on_kline_ ? "yes" : "no");
+                 py_on_kline_ ? "yes" : "no",
+                 py_on_order_ ? "yes" : "no",
+                 py_on_trade_ ? "yes" : "no");
+    }
+
+    void start() override {
+        call_simple_hook(py_on_start_);
     }
 
     void stop() override {
+        call_simple_hook(py_on_stop_);
         PyGILState_STATE gstate = PyGILState_Ensure();
+        Py_XDECREF(py_on_init_);
+        Py_XDECREF(py_on_start_);
         Py_XDECREF(py_on_tick_);
         Py_XDECREF(py_on_kline_);
+        Py_XDECREF(py_on_order_);
+        Py_XDECREF(py_on_trade_);
+        Py_XDECREF(py_on_stop_);
         Py_XDECREF(py_instance_);
         Py_XDECREF(py_send_order_);
         PyGILState_Release(gstate);
@@ -104,6 +148,14 @@ private:
 
     void on_kline_event(void* d) {
         on_kline(static_cast<KlineRecord*>(d));
+    }
+
+    void on_order_event(void* d) {
+        on_order(static_cast<OrderRtn*>(d));
+    }
+
+    void on_trade_event(void* d) {
+        on_trade(static_cast<TradeRtn*>(d));
     }
 
     static PyObject* py_send_order(PyObject* self, PyObject* args, PyObject* kwargs) {
@@ -227,23 +279,18 @@ private:
 
         Py_DECREF(config_dict);
 
-        PyErr_Clear();
-        py_on_tick_ = PyObject_GetAttrString(py_instance_, "on_tick");
-        if (py_on_tick_ && !PyCallable_Check(py_on_tick_)) {
-            Py_DECREF(py_on_tick_);
-            py_on_tick_ = nullptr;
-        }
-        PyErr_Clear();
-
-        py_on_kline_ = PyObject_GetAttrString(py_instance_, "on_kline");
-        if (py_on_kline_ && !PyCallable_Check(py_on_kline_)) {
-            Py_DECREF(py_on_kline_);
-            py_on_kline_ = nullptr;
-        }
-        PyErr_Clear();
+        py_on_init_ = first_available_callable(py_instance_, {"handle_init", "on_init"});
+        py_on_start_ = first_available_callable(py_instance_, {"handle_start", "on_start"});
+        py_on_tick_ = first_available_callable(py_instance_, {"handle_tick", "on_tick"});
+        py_on_kline_ = first_available_callable(py_instance_, {"handle_bar", "on_kline"});
+        py_on_order_ = first_available_callable(py_instance_, {"handle_order", "on_order"});
+        py_on_trade_ = first_available_callable(py_instance_, {"handle_trade", "on_trade"});
+        py_on_stop_ = first_available_callable(py_instance_, {"handle_stop", "on_stop"});
 
         Py_DECREF(cls);
         Py_DECREF(module);
+
+        call_simple_hook(py_on_init_);
 
         PyGILState_Release(gstate);
         if (py_on_tick_ == nullptr && py_on_kline_ == nullptr) {
@@ -349,6 +396,72 @@ private:
         PyGILState_Release(gstate);
     }
 
+    void on_order(const OrderRtn* rtn) {
+        if (!enabled_ || !py_on_order_ || !rtn) return;
+
+        PyGILState_STATE gstate = PyGILState_Ensure();
+        PyObject* d = PyDict_New();
+        dict_set_str(d, "account_id", rtn->account_id);
+        dict_set_str(d, "order_ref", rtn->order_ref);
+        dict_set_str(d, "order_sys_id", rtn->order_sys_id);
+        dict_set_str(d, "exchange_id", rtn->exchange_id);
+        dict_set_str(d, "symbol", rtn->symbol);
+        dict_set_long(d, "symbol_id", static_cast<long long>(rtn->symbol_id));
+        dict_set_str(d, "direction", std::string(1, rtn->direction).c_str());
+        dict_set_str(d, "offset_flag", std::string(1, rtn->offset_flag).c_str());
+        dict_set_double(d, "limit_price", rtn->limit_price);
+        dict_set_long(d, "volume_total", rtn->volume_total);
+        dict_set_long(d, "volume_traded", rtn->volume_traded);
+        dict_set_str(d, "status", std::string(1, rtn->status).c_str());
+        dict_set_str(d, "status_msg", rtn->status_msg);
+        PyObject* ret = PyObject_CallFunctionObjArgs(py_on_order_, d, nullptr);
+        Py_DECREF(d);
+        Py_XDECREF(ret);
+        if (PyErr_Occurred()) {
+            PyErr_Print();
+            handle_error();
+        }
+        PyGILState_Release(gstate);
+    }
+
+    void on_trade(const TradeRtn* rtn) {
+        if (!enabled_ || !py_on_trade_ || !rtn) return;
+
+        PyGILState_STATE gstate = PyGILState_Ensure();
+        PyObject* d = PyDict_New();
+        dict_set_str(d, "account_id", rtn->account_id);
+        dict_set_str(d, "exchange_id", rtn->exchange_id);
+        dict_set_str(d, "symbol", rtn->symbol);
+        dict_set_long(d, "symbol_id", static_cast<long long>(rtn->symbol_id));
+        dict_set_str(d, "direction", std::string(1, rtn->direction).c_str());
+        dict_set_str(d, "offset_flag", std::string(1, rtn->offset_flag).c_str());
+        dict_set_double(d, "price", rtn->price);
+        dict_set_long(d, "volume", rtn->volume);
+        dict_set_str(d, "trade_id", rtn->trade_id);
+        dict_set_str(d, "order_ref", rtn->order_ref);
+        dict_set_str(d, "order_sys_id", rtn->order_sys_id);
+        PyObject* ret = PyObject_CallFunctionObjArgs(py_on_trade_, d, nullptr);
+        Py_DECREF(d);
+        Py_XDECREF(ret);
+        if (PyErr_Occurred()) {
+            PyErr_Print();
+            handle_error();
+        }
+        PyGILState_Release(gstate);
+    }
+
+    void call_simple_hook(PyObject* hook) {
+        if (!enabled_ || !hook) return;
+        PyGILState_STATE gstate = PyGILState_Ensure();
+        PyObject* ret = PyObject_CallFunctionObjArgs(hook, nullptr);
+        Py_XDECREF(ret);
+        if (PyErr_Occurred()) {
+            PyErr_Print();
+            handle_error();
+        }
+        PyGILState_Release(gstate);
+    }
+
     void handle_error() {
         if (error_policy_ == "ignore") return;
         if (error_policy_ == "disable") {
@@ -381,8 +494,13 @@ private:
     std::string error_policy_;
 
     PyObject* py_instance_ = nullptr;
+    PyObject* py_on_init_ = nullptr;
+    PyObject* py_on_start_ = nullptr;
     PyObject* py_on_tick_ = nullptr;
     PyObject* py_on_kline_ = nullptr;
+    PyObject* py_on_order_ = nullptr;
+    PyObject* py_on_trade_ = nullptr;
+    PyObject* py_on_stop_ = nullptr;
     PyObject* py_send_order_ = nullptr;
 };
 

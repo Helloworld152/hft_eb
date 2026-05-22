@@ -70,9 +70,39 @@ endif()
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
+set(HFT_BACKTEST_PACKAGE_DIR ${CMAKE_SOURCE_DIR}/hft_backtest)
+set(HFT_BACKTEST_PACKAGE_LIB_DIR ${HFT_BACKTEST_PACKAGE_DIR}/lib)
+
+function(hft_mark_backtest_package_lib target_name)
+    if(TARGET ${target_name})
+        set_target_properties(${target_name} PROPERTIES
+            LIBRARY_OUTPUT_DIRECTORY ${HFT_BACKTEST_PACKAGE_LIB_DIR}
+            BUILD_RPATH "\$ORIGIN"
+        )
+    endif()
+endfunction()
+
 # Dependencies
 find_package(Threads REQUIRED)
-find_package(Python3 COMPONENTS Development REQUIRED)
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+execute_process(
+    COMMAND ${Python3_EXECUTABLE} -m pybind11 --cmakedir
+    OUTPUT_VARIABLE PYBIND11_CMAKE_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+if(NOT PYBIND11_CMAKE_DIR)
+    execute_process(
+        COMMAND python3 -m pybind11 --cmakedir
+        OUTPUT_VARIABLE PYBIND11_CMAKE_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+endif()
+if(PYBIND11_CMAKE_DIR)
+    set(pybind11_DIR ${PYBIND11_CMAKE_DIR} CACHE PATH "pybind11 CMake directory")
+endif()
+find_package(pybind11 CONFIG QUIET)
 if(NOT TARGET yaml-cpp)
   set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
   set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
@@ -311,6 +341,11 @@ add_library(mod_signal_csv SHARED modules/monitor/signal_csv_module.cpp)
 target_include_directories(mod_signal_csv PRIVATE include)
 target_link_libraries(mod_signal_csv PRIVATE hft_core -Wl,--no-as-needed pthread -Wl,--as-needed)
 
+# 6.2 编译插件 F-3: Backtest Recorder
+add_library(mod_backtest_recorder SHARED modules/monitor/backtest_recorder_module.cpp)
+target_include_directories(mod_backtest_recorder PRIVATE include)
+target_link_libraries(mod_backtest_recorder PRIVATE hft_core)
+
 # 7. 编译插件 Test Harness (ZMQ 控制)
 add_library(mod_test_harness SHARED modules/test_harness/test_harness_module.cpp)
 target_include_directories(mod_test_harness PRIVATE include core/include)
@@ -350,8 +385,38 @@ add_library(mod_sweep_trader SHARED modules/sweep_trader/sweep_trader_module.cpp
 target_include_directories(mod_sweep_trader PRIVATE include core/include)
 target_link_libraries(mod_sweep_trader PRIVATE hft_core)
 
-# 7. 编译主程序
-add_executable(hft_engine engine/src/main.cpp engine/src/engine.cpp)
+# 7. 编译主程序 / 引擎库
+add_library(hft_engine_lib SHARED engine/src/engine.cpp)
+target_include_directories(hft_engine_lib PRIVATE include engine/include infra/include)
+target_link_libraries(hft_engine_lib PRIVATE hft_core hft_logging dl pthread yaml-cpp)
+set_target_properties(hft_engine_lib PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY ${HFT_BACKTEST_PACKAGE_LIB_DIR}
+    BUILD_RPATH "\$ORIGIN"
+)
+
+add_executable(hft_engine engine/src/main.cpp)
 target_include_directories(hft_engine PRIVATE include engine/include infra/include)
-target_link_libraries(hft_engine PRIVATE hft_core hft_logging dl pthread yaml-cpp)
+target_link_libraries(hft_engine PRIVATE hft_engine_lib)
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
+
+if(pybind11_FOUND)
+    pybind11_add_module(_core MODULE hft_backtest/native/hft_backtest_core.cpp)
+    target_include_directories(_core PRIVATE include engine/include infra/include core/include)
+    target_link_libraries(_core PRIVATE hft_engine_lib hft_core hft_logging)
+    set_target_properties(_core PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/hft_backtest
+        BUILD_RPATH "\$ORIGIN/lib"
+    )
+endif()
+
+hft_mark_backtest_package_lib(yaml-cpp)
+hft_mark_backtest_package_lib(hft_core)
+hft_mark_backtest_package_lib(hft_engine_lib)
+hft_mark_backtest_package_lib(mod_py_strategy)
+hft_mark_backtest_package_lib(mod_replay)
+hft_mark_backtest_package_lib(mod_risk)
+hft_mark_backtest_package_lib(mod_sim_trade)
+hft_mark_backtest_package_lib(mod_backtest_recorder)
+if(TARGET mod_kline_parquet_replay)
+    hft_mark_backtest_package_lib(mod_kline_parquet_replay)
+endif()

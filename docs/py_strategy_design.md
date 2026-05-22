@@ -123,4 +123,5 @@ send_order(
 - `CMakeLists.txt`（Python 依赖 + 插件目标）
 - `conf/config_py_backtest.yaml`（示例配置）
 - `py_tools/strategies/sample_strategy.py`（示例策略）
-- `py_tools/run_engine.py`（可选）
+- `hft_backtest/scripts/run_config.py`（可选，安装后可通过 `hft-backtest-run-config` 调用）
+- `hft_backtest/tests/test_sdk.py`（包内最小自测）
