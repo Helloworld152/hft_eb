@@ -84,7 +84,31 @@ endfunction()
 
 # Dependencies
 find_package(Threads REQUIRED)
-find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+if(DEFINED Python3_LIBRARY AND DEFINED Python3_INCLUDE_DIR)
+  # setup.py: paths provided, bypass Development.Module
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  set(Python3_INCLUDE_DIRS "${Python3_INCLUDE_DIR}")
+  set(Python3_LIBRARIES "${Python3_LIBRARY}")
+  if(NOT TARGET Python3::Module)
+    add_library(Python3::Module SHARED IMPORTED)
+    set_target_properties(Python3::Module PROPERTIES
+      IMPORTED_LOCATION "${Python3_LIBRARY}"
+      INTERFACE_INCLUDE_DIRECTORIES "${Python3_INCLUDE_DIRS}")
+  endif()
+  # pybind11 需要 python3_add_library，手动定义
+  function(python3_add_library _name)
+    cmake_parse_arguments(PARSE_ARGV 1 _args "MODULE;SHARED;STATIC" "" "")
+    if(_args_MODULE)
+      add_library(${_name} MODULE ${_args_UNPARSED_ARGUMENTS})
+    else()
+      add_library(${_name} ${_args_UNPARSED_ARGUMENTS})
+    endif()
+    target_include_directories(${_name} PRIVATE ${Python3_INCLUDE_DIRS})
+    target_link_libraries(${_name} PRIVATE ${Python3_LIBRARIES})
+  endfunction()
+else()
+  find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
+endif()
 execute_process(
     COMMAND ${Python3_EXECUTABLE} -m pybind11 --cmakedir
     OUTPUT_VARIABLE PYBIND11_CMAKE_DIR
@@ -202,7 +226,7 @@ target_link_libraries(mod_t0_rb_strategy PRIVATE hft_core)
 
 add_library(mod_py_strategy SHARED modules/py_strategy/py_strategy_module.cpp)
 target_include_directories(mod_py_strategy PRIVATE include core/include ${Python3_INCLUDE_DIRS})
-target_link_libraries(mod_py_strategy PRIVATE hft_core Python3::Python)
+target_link_libraries(mod_py_strategy PRIVATE hft_core Python3::Module)
 
 # 2.1 编译插件 B-Tree: Strategy Tree Container
 add_library(mod_strategy_tree SHARED modules/strategy/strategy_tree_module.cpp)
@@ -396,7 +420,7 @@ set_target_properties(hft_engine_lib PROPERTIES
 
 add_executable(hft_engine engine/src/main.cpp)
 target_include_directories(hft_engine PRIVATE include engine/include infra/include)
-target_link_libraries(hft_engine PRIVATE hft_engine_lib)
+target_link_libraries(hft_engine PRIVATE hft_engine_lib hft_logging spdlog::spdlog)
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
 if(pybind11_FOUND)
