@@ -324,14 +324,16 @@ target_include_directories(factor_trade_pressure_500ms PRIVATE include core/incl
 target_link_libraries(factor_trade_pressure_500ms PRIVATE hft_core)
 
 # 3. 编译插件 C: SimpleTrade
-add_library(mod_trade SHARED modules/trade/simple_trade.cpp)
-target_include_directories(mod_trade PRIVATE include)
-target_link_libraries(mod_trade PRIVATE hft_core)
 
 # 3.0 编译插件 C-SimTrade: Simulated Exchange
 add_library(mod_sim_trade SHARED modules/trade/sim_trade_module.cpp)
 target_include_directories(mod_sim_trade PRIVATE include core/include)
 target_link_libraries(mod_sim_trade PRIVATE hft_core)
+
+# 3.0.0 编译插件 C-LobSimTrade: LOB Matching Engine
+add_library(mod_lob_sim_trade SHARED modules/trade/lob_sim_trade_module.cpp)
+target_include_directories(mod_lob_sim_trade PRIVATE include core/include)
+target_link_libraries(mod_lob_sim_trade PRIVATE hft_core)
 
 # 3.0.1 编译插件 C-GatewayPoll: 独立 gateway 进程轮询桥接
 add_library(mod_gateway_poll SHARED modules/trade/gateway_poll_module.cpp)
