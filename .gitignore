@@ -6,6 +6,9 @@ build/
 log/
 demo/
 flow_log/
+hft_backtest/dist/
+
+results/
 
 target/
 nohup.out
