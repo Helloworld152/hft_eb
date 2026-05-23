@@ -1,71 +1,88 @@
 ---
 name: hft_eb_dev
-description: 项目级 skill：用于在 hft_eb 仓库中进行导航、开发、验证与排障
+description: hft_eb 仓库开发——导航、修改、验证
 ---
 
-# hft_eb 开发 Skill
+# hft_eb 开发
 
-当用户要在 `hft_eb` 仓库里做开发、排查问题、补文档、改模块、加配置或梳理架构时，使用这个 skill。
+## 快速定位
 
-这个 skill 的目标不是讲通用 HFT 原理，而是让 Codex 先快速对齐本仓库的真实结构、开发入口、验证方式和风险边界，再做最小修改。
+```
+grep -rn "关键词" modules/ core/ include/ infra/  # 找代码
+grep -rn "关键词" docs/                              # 找设计依据
+```
 
-## 使用边界
+目录分层：`core/` 协议+状态 | `infra/` 通用组件 | `modules/` 插件 | `hft_backtest/` Python 回测 | `conf/` YAML 配置
 
-- 只针对当前仓库 `hft_eb`
-- 优先做最小修改，不主动扩散到无关模块
-- 先读现有实现和设计文档，再改代码
-- 若改动将跨越多个模块或涉及架构设计，先整理计划再执行
+## 构建
 
-## 首次进入仓库时先做什么
+```bash
+# 最小构建（改单个模块后）
+cd build && cmake .. && make <target>
+# 如: make mod_sim_trade
 
-1. 先读 [README.md](../../README.md)，确认系统定位、主目录和插件分层。
-2. 再读 [references/project_map.md](references/project_map.md)，建立源码目录和文档索引。
-3. 根据任务类型加载对应引用：
-   - 改业务模块或配置：读 [references/workflows.md](references/workflows.md)
-   - 需要找设计依据：按 [references/project_map.md](references/project_map.md) 中列出的文档继续深读
-   - 构建失败、运行异常、链路不通：读 [references/troubleshooting.md](references/troubleshooting.md)
+# 完整构建+安装（改 Python/C++ 桥接后）
+python3 setup.py bdist_wheel && pip install --force-reinstall hft_backtest/dist/hft_backtest-*.whl
+```
 
-## 仓库工作准则
+## 验证
 
-- 把 `src/`、`include/`、`core/` 视为引擎主干；把 `modules/` 视为插件实现；把 `conf/` 视为运行入口配置。
-- 先确认修改属于哪一层，再定位最小落点，不要同时改引擎、插件、配置，除非任务明确要求。
-- 插件能力和数据流优先以现有文档为准，不凭文件名猜行为。
-- 新增或修改配置时，优先复用现有 `conf/*.yaml` 模式，不另造结构。
-- 修改前先看调用点和配置样例；修改后至少做一次和任务匹配的最小验证。
+- 改 C++ 模块 → 最小构建目标
+- 改 py_strategy/recorder/sim_trade → 重编 wheel + `python3 hft_backtest/test1.py`
+- 改 protocol.h → 检查所有消费该事件/结构的模块
+- 改 infra 组件 → 检查 `simple_matching_engine.h` / `tick_matching_engine.h` 的调用方
 
-## 默认开发流程
+## 文档维护
 
-1. 用 `rg` 定位目标类型、事件名、模块名、配置名。
-2. 读取目标文件和相邻实现，确认事件流、配置注入方式和已有约束。
-3. 如涉及插件行为，再读对应设计文档或模块总览。
-4. 先决定验证方式，再做原子修改：
-   - 纯构建类改动：至少保证相关目标能编译
-   - 单模块逻辑改动：优先跑最小化构建或对应测试
-   - 配置/脚本改动：校验路径、文件名、启动命令和依赖关系
-5. 汇报时说明影响范围、验证方式和未覆盖风险。
+大量代码修改后 → 主动问用户"是否更新对应文档"。
+文档更新要求：只改受影响的部分，精炼，不堆砌过程。
 
-更细的构建、验证和排障入口见 [references/workflows.md](references/workflows.md) 与 [references/troubleshooting.md](references/troubleshooting.md)。
+## 规则
 
-## 仓库特有注意事项
+- 最小修改，不改无关文件
+- `#pragma once`，不用 `#ifndef`
+- 类名 PascalCase，成员变量 `snake_case_`，文件 `snake_case`
+- `IntrusivePool` 要求 trivially destructible → 用 `char[N]`，别用 `std::string`
+- 事件流：ORDER_REQ → Risk → ORDER_SEND → SimTrade → RTN_ORDER/RTN_TRADE
+- CANCEL_REQ → Risk → CANCEL_SEND → SimTrade
+- Python 策略只暴露 `config`，`_send_order`/`_cancel_order` 由 C++ 构造后属性注入
 
-- `run.sh` 会先 `pkill hft_engine`，再启动 `conf/config_real_test.yaml`；除非用户明确要求，否则不要直接执行。
-- `build_release.sh` 会清理部分环境变量并在顶层 `build/` 里做 Release 构建，适合整仓构建，不适合轻量探测。
-- 顶层 `CMakeLists.txt` 会通过 `FetchContent` 拉取 `ccapi`；网络受限或离线环境下，整仓构建可能失败。
-- 当前仓库常有未提交改动；新增改动时避免顺手整理无关文件。
+## 新增模块 checklist
 
-## 什么时候扩展阅读
+```
+[ ] modules/<name>/<name>_module.cpp   — 实现 IModule，末尾 EXPORT_MODULE
+[ ] CMakeLists.txt                      — add_library + target_include_directories + target_link_libraries
+[ ] 订阅事件 (init 里 bus_->subscribe)
+[ ] config 参数用 config.count() 检查，给默认值
+[ ] setup.py 和 engine.py 如需构建/加载此模块，同步更新
+```
 
-- 涉及事件总线、引擎生命周期、插件装载：优先读 `README.md`、`src/engine.cpp`、`include/engine.h`
-- 涉及插件分工：优先读 [docs/modules_overview.md](../../docs/modules_overview.md)
-- 涉及策略树、因子 DAG、并行模型：优先读 `架构.md` 及 `docs/` 下对应设计文档
-- 涉及性能或编译选项：优先读 [docs/编译优化指南_compile_optimization.md](../../docs/编译优化指南_compile_optimization.md)
+## 新增事件 checklist
 
-## 最小使用方式
+```
+[ ] engine/include/framework.h — EventType enum 加一项（插在 MAX_EVENTS 前）
+[ ] 所有发布方 — bus_->publish(EVENT_XXX, ...)
+[ ] 所有订阅方 — bus_->subscribe(EVENT_XXX, ...)
+[ ] 是否需 Risk 转发（交易类事件 = 需要）
+```
 
-在后续对话里可以直接说：
+## 依赖规则
 
-- “使用 `hft_eb_dev` skill，帮我定位某个模块的入口”
-- “使用 `hft_eb_dev` skill，给 `risk` 模块加一个最小修复”
-- “使用 `hft_eb_dev` skill，解释某个配置文件怎么走到插件里”
+```
+infra/  ← 不依赖任何业务层（framework/protocol 都不行）
+core/   ← 依赖 infra/
+modules/ ← 依赖 framework + core + infra
+hft_backtest/ ← 依赖 modules/ 编译出的 .so
+```
 
-如果任务同时涉及通用 HFT 性能优化，再叠加使用现有的 `hft_trade_system` skill。
+infra 组件必须 header-only，不依赖 `framework.h`、`protocol.h`。
+
+## 回测开发
+
+详见 [references/hft_backtest.md](references/hft_backtest.md)
+
+## 危险操作
+
+- 不要跑 `./run.sh`（会 kill 进程）
+- 不要 `rm -rf build/` 再全量重编（慢）
+- 改 `protocol.h` 字段顺序/大小 → 影响所有模块 ABI

@@ -1,12 +1,13 @@
 from .objects import BarData, OrderData, TickData, TradeData
 
 
-class CtaTemplate:
-    author = ""
+class BaseStrategy:
+    """策略基类，所有策略必须继承"""
 
-    def __init__(self, config=None, send_order=None):
+    def __init__(self, config=None):
         self.config = dict(config or {})
-        self._send_order = send_order
+        self._send_order = None    # C++ 构造后注入
+        self._cancel_order = None  # C++ 构造后注入
         self.strategy_name = self.config.get("strategy_name", self.__class__.__name__)
         self.vt_symbol = self.config.get("symbol", "")
 
@@ -58,7 +59,7 @@ class CtaTemplate:
     def send_order(self, symbol, direction, offset, price, volume, account_id=""):
         if self._send_order is None:
             raise RuntimeError("send_order callback is not bound")
-        self._send_order(
+        return self._send_order(
             symbol=symbol,
             direction=direction,
             offset=offset,
@@ -67,14 +68,23 @@ class CtaTemplate:
             account_id=account_id,
         )
 
+    def cancel_order(self, client_id, symbol=None, account_id=""):
+        if self._cancel_order is None:
+            raise RuntimeError("cancel_order callback is not bound")
+        self._cancel_order(
+            client_id=int(client_id),
+            symbol=symbol or self.vt_symbol,
+            account_id=account_id,
+        )
+
     def buy(self, price, volume, symbol=None, account_id=""):
-        self.send_order(symbol or self.vt_symbol, "B", "O", price, volume, account_id)
+        return self.send_order(symbol or self.vt_symbol, "B", "O", price, volume, account_id)
 
     def sell(self, price, volume, symbol=None, account_id=""):
-        self.send_order(symbol or self.vt_symbol, "S", "C", price, volume, account_id)
+        return self.send_order(symbol or self.vt_symbol, "S", "C", price, volume, account_id)
 
     def short(self, price, volume, symbol=None, account_id=""):
-        self.send_order(symbol or self.vt_symbol, "S", "O", price, volume, account_id)
+        return self.send_order(symbol or self.vt_symbol, "S", "O", price, volume, account_id)
 
     def cover(self, price, volume, symbol=None, account_id=""):
-        self.send_order(symbol or self.vt_symbol, "B", "C", price, volume, account_id)
+        return self.send_order(symbol or self.vt_symbol, "B", "C", price, volume, account_id)

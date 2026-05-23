@@ -139,6 +139,7 @@ public:
         Py_XDECREF(py_on_stop_);
         Py_XDECREF(py_instance_);
         Py_XDECREF(py_send_order_);
+        Py_XDECREF(py_cancel_order_);
         PyGILState_Release(gstate);
     }
 
@@ -196,8 +197,35 @@ private:
         }
 
         req.client_id = OrderIDGenerator::instance().next_id();
-        OrderIDGenerator::instance().next_order_ref(req.order_ref);
         mod->bus_->publish(EVENT_ORDER_REQ, &req);
+        return Py_BuildValue("K", static_cast<unsigned long long>(req.client_id));
+    }
+
+    static PyObject* py_cancel_order(PyObject* self, PyObject* args, PyObject* kwargs) {
+        PyStrategyModule* mod = static_cast<PyStrategyModule*>(PyCapsule_GetPointer(self, "PyStrategyModule"));
+        if (!mod || !mod->bus_) Py_RETURN_NONE;
+
+        unsigned long long client_id = 0;
+        const char* symbol = nullptr;
+        const char* account_id = nullptr;
+        static const char* kwlist[] = {"client_id", "symbol", "account_id", nullptr};
+        if (!PyArg_ParseTupleAndKeywords(args, kwargs, "Ks|s", const_cast<char**>(kwlist),
+                                         &client_id, &symbol, &account_id)) {
+            PyErr_Clear();
+            Py_RETURN_NONE;
+        }
+
+        CancelReq req{};
+        req.client_id = static_cast<uint64_t>(client_id);
+        std::strncpy(req.symbol, symbol, sizeof(req.symbol) - 1);
+        if (account_id && account_id[0] != '\0')
+            std::strncpy(req.account_id, account_id, sizeof(req.account_id) - 1);
+        else if (!mod->default_account_.empty())
+            std::strncpy(req.account_id, mod->default_account_.c_str(), sizeof(req.account_id) - 1);
+        else
+            std::strncpy(req.account_id, "SIM", sizeof(req.account_id) - 1);
+
+        mod->bus_->publish(EVENT_CANCEL_REQ, &req);
         Py_RETURN_NONE;
     }
 
@@ -242,17 +270,25 @@ private:
         }
 
         PyObject* capsule = PyCapsule_New(this, "PyStrategyModule", nullptr);
-        static PyMethodDef def = {
+        static PyMethodDef send_def = {
             "send_order",
             (PyCFunction)py_send_order,
             METH_VARARGS | METH_KEYWORDS,
             "send order to engine"
         };
-        py_send_order_ = PyCFunction_NewEx(&def, capsule, nullptr);
+        py_send_order_ = PyCFunction_NewEx(&send_def, capsule, nullptr);
+
+        static PyMethodDef cancel_def = {
+            "cancel_order",
+            (PyCFunction)py_cancel_order,
+            METH_VARARGS | METH_KEYWORDS,
+            "cancel order by sys_id"
+        };
+        py_cancel_order_ = PyCFunction_NewEx(&cancel_def, capsule, nullptr);
         Py_DECREF(capsule);
 
         bool ctor_with_args = true;
-        py_instance_ = PyObject_CallFunctionObjArgs(cls, config_dict, py_send_order_, nullptr);
+        py_instance_ = PyObject_CallFunctionObjArgs(cls, config_dict, nullptr);
 
         if (!py_instance_) {
             PyErr_Clear();
@@ -268,10 +304,13 @@ private:
             return false;
         }
 
+        PyObject_SetAttrString(py_instance_, "_send_order", py_send_order_);
+        PyObject_SetAttrString(py_instance_, "_cancel_order", py_cancel_order_);
+
         if (!ctor_with_args && PyObject_HasAttrString(py_instance_, "init")) {
             PyObject* init_fn = PyObject_GetAttrString(py_instance_, "init");
             if (init_fn && PyCallable_Check(init_fn)) {
-                PyObject* args = PyTuple_Pack(2, config_dict, py_send_order_);
+                PyObject* args = PyTuple_Pack(1, config_dict);
                 PyObject* ret = PyObject_CallObject(init_fn, args);
                 Py_XDECREF(ret);
                 Py_DECREF(args);
@@ -507,6 +546,7 @@ private:
     PyObject* py_on_trade_ = nullptr;
     PyObject* py_on_stop_ = nullptr;
     PyObject* py_send_order_ = nullptr;
+    PyObject* py_cancel_order_ = nullptr;
 };
 
 EXPORT_MODULE(PyStrategyModule)

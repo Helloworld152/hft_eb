@@ -1,7 +1,7 @@
-from hft_backtest import CtaTemplate
+from hft_backtest import BaseStrategy
 
 
-class DemoStrategy(CtaTemplate):
+class DemoStrategy(BaseStrategy):
     author = "codex"
 
     def on_init(self):

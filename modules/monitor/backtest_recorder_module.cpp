@@ -30,8 +30,8 @@ public:
         trade_out_.open((fs::path(output_dir_) / "trades.csv").string(), std::ios::out | std::ios::trunc);
         account_out_.open((fs::path(output_dir_) / "accounts.csv").string(), std::ios::out | std::ios::trunc);
 
-        order_out_ << "account_id,order_ref,order_sys_id,exchange_id,symbol,symbol_id,direction,offset_flag,limit_price,volume_total,volume_traded,status,status_msg\n";
-        trade_out_ << "account_id,exchange_id,symbol,symbol_id,direction,offset_flag,price,volume,trade_id,order_ref,order_sys_id\n";
+        order_out_ << "account_id,order_sys_id,exchange_id,symbol,symbol_id,direction,offset_flag,limit_price,volume_total,volume_traded,status,status_msg\n";
+        trade_out_ << "account_id,exchange_id,symbol,symbol_id,direction,offset_flag,price,volume,trade_id,order_sys_id\n";
         account_out_ << "broker_id,account_id,balance,available,margin,close_pnl,position_pnl\n";
     }
 
@@ -47,7 +47,6 @@ private:
         if (!rtn || !order_out_.is_open()) return;
         std::lock_guard<std::mutex> lock(mtx_);
         order_out_ << rtn->account_id << ','
-                   << rtn->order_ref << ','
                    << rtn->order_sys_id << ','
                    << rtn->exchange_id << ','
                    << rtn->symbol << ','
@@ -75,7 +74,6 @@ private:
                    << rtn->price << ','
                    << rtn->volume << ','
                    << rtn->trade_id << ','
-                   << rtn->order_ref << ','
                    << rtn->order_sys_id << '\n';
         trade_out_.flush();
     }

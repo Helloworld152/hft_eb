@@ -1,8 +1,8 @@
-from hft_backtest import BacktestEngine, CtaTemplate
+from hft_backtest import BacktestEngine, BaseStrategy
 
-class MyStrategy(CtaTemplate):
-    def __init__(self, engine, setting):
-        super().__init__(engine, setting)
+class MyStrategy(BaseStrategy):
+    def __init__(self, config=None):
+        super().__init__(config)
         self.bought = False
         self.order_count = 0
         self.trade_count = 0

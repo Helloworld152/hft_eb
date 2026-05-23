@@ -2,10 +2,10 @@ import os
 import sys
 from collections import deque
 
-from hft_backtest import BacktestEngine, CtaTemplate
+from hft_backtest import BacktestEngine, BaseStrategy
 
 
-class AgHFTOStrategy(CtaTemplate):
+class AgHFTOStrategy(BaseStrategy):
     """ag2606 高频T+0策略：短周期动量 + 成交量确认 + 严格风控"""
 
     author = "quant"

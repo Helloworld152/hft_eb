@@ -18,11 +18,17 @@ public:
         // 订阅原始报单请求
         bus_->subscribe(EVENT_ORDER_REQ,
                         StaticDelegate<void(void*)>::bind<RiskModule, &RiskModule::on_order_req_event>(this));
+        bus_->subscribe(EVENT_CANCEL_REQ,
+                        StaticDelegate<void(void*)>::bind<RiskModule, &RiskModule::on_cancel_req_event>(this));
     }
 
 private:
     void on_order_req_event(void* d) {
         checkRisk(static_cast<OrderReq*>(d));
+    }
+
+    void on_cancel_req_event(void* d) {
+        bus_->publish(EVENT_CANCEL_SEND, d);
     }
 
     void checkRisk(OrderReq* req) {
