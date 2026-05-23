@@ -3,6 +3,7 @@
 #include "symbol_manager.h"
 #include "tick_matching_engine.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <deque>
@@ -52,14 +53,10 @@ private:
         bool is_market = false;
     };
 
-    TickMatchingEngine& get_engine(const std::string& symbol) {
-        auto it = engines_.find(symbol);
-        if (it != engines_.end()) return *it->second;
-        auto eng = std::make_unique<TickMatchingEngine>(max_orders_);
-        TickMatchingEngine* ptr = eng.get();
-        engines_[symbol] = std::move(eng);
-        return *ptr;
-    }
+    struct SimpleFill {
+        double price = 0.0;
+        int qty = 0;
+    };
 
     // ======================================================================
     //  事件入口
@@ -73,12 +70,7 @@ private:
 
     void onOrder(OrderReq* req) {
         if (!req || req->symbol[0] == '\0' || req->volume <= 0) return;
-
-        std::string sym(req->symbol);
-        auto& engine = get_engine(sym);
-        const auto side = (req->direction == 'B') ? TickMatchingEngine::BUY
-                                                   : TickMatchingEngine::SELL;
-        const bool is_market = (req->price <= 0.0);
+        if (req->direction != 'B' && req->direction != 'S') return;
 
         uint64_t sys_id = next_order_sys_id_++;
         TrackedOrder tracked{};
@@ -91,47 +83,59 @@ private:
         tracked.offset_flag = req->offset_flag;
         tracked.limit_price = req->price;
         tracked.volume_total = req->volume;
-        tracked.is_market = is_market;
+        tracked.is_market = (req->price <= 0.0);
 
         tracked_orders_[sys_id] = tracked;
         client_to_sys_[req->client_id] = sys_id;
+        pending_order_ids_.push_back(sys_id);
 
-        TickMatchingEngine::Output output;
-        bool ok = engine.submit(sys_id, side, req->price, req->volume, is_market, output);
-
-        if (!ok) {
-            publish_order_rtn(tracked_orders_[sys_id], '5', is_market ? "无对手方" : "引擎拒绝");
-            client_to_sys_.erase(req->client_id);
-            tracked_orders_.erase(sys_id);
-            return;
-        }
-
-        int taker_filled = 0;
-        for (const auto& trade : output.trades)
-            taker_filled += process_trade(trade, sys_id);
-
-        tracked_orders_[sys_id].volume_traded = taker_filled;
-
-        if (output.resting) {
-            publish_order_rtn(tracked_orders_[sys_id], taker_filled > 0 ? '1' : '3');
-        } else {
-            publish_order_rtn(tracked_orders_[sys_id], '0');
-            client_to_sys_.erase(req->client_id);
-            tracked_orders_.erase(sys_id);
-        }
+        // 保守回测：订单先进入 pending，不允许在产生信号的同一个 tick 成交。
+        publish_order_rtn(tracked_orders_[sys_id], '3');
     }
 
     void onTick(TickRecord* tick) {
         if (!tick || tick->symbol[0] == '\0') return;
-        std::string sym(tick->symbol);
-        auto it = engines_.find(sym);
-        if (it == engines_.end()) return;
 
-        TickMatchingEngine::Output output;
-        it->second->apply_tick(tick->bid_price, tick->bid_volume, 5,
-                               tick->ask_price, tick->ask_volume, 5, output);
-        for (const auto& trade : output.trades)
-            process_trade(trade, 0);
+        int bid_remain[5] = {};
+        int ask_remain[5] = {};
+        for (int i = 0; i < 5; ++i) {
+            bid_remain[i] = tick->bid_volume[i];
+            ask_remain[i] = tick->ask_volume[i];
+        }
+
+        std::vector<uint64_t> still_working;
+        still_working.reserve(working_order_ids_.size() + pending_order_ids_.size());
+
+        for (uint64_t sys_id : working_order_ids_) {
+            auto it = tracked_orders_.find(sys_id);
+            if (it == tracked_orders_.end()) continue;
+
+            TrackedOrder& order = it->second;
+            if (std::strncmp(order.symbol, tick->symbol, sizeof(order.symbol)) != 0) {
+                still_working.push_back(sys_id);
+                continue;
+            }
+
+            SimpleFill fill{};
+            if (try_simple_fill(order, *tick, bid_remain, ask_remain, fill)) {
+                TickMatchingEngine::Trade trade{};
+                trade.taker_id = 0;            // 0 表示外部 tick 流动性
+                trade.maker_id = order.order_sys_id;
+                trade.price = fill.price;
+                trade.qty = fill.qty;
+                process_trade(trade, 0);
+            }
+
+            if (tracked_orders_.find(sys_id) != tracked_orders_.end()) {
+                still_working.push_back(sys_id);
+            }
+        }
+
+        // 当前 tick 撮合结束后，再让本 tick 期间产生的新订单进入 working。
+        // 因此策略基于 tick[i] 发出的订单最早只能在 tick[i+1] 成交。
+        still_working.insert(still_working.end(), pending_order_ids_.begin(), pending_order_ids_.end());
+        pending_order_ids_.clear();
+        working_order_ids_.swap(still_working);
     }
 
     void onCancel(CancelReq* req) {
@@ -144,16 +148,52 @@ private:
         auto it = tracked_orders_.find(sys_id);
         if (it == tracked_orders_.end()) return;
 
-        std::string sym(req->symbol);
-        auto eng_it = engines_.find(sym);
-        if (eng_it == engines_.end()) return;
-
-        TickMatchingEngine::Output output;
-        if (!eng_it->second->cancel(sys_id, output)) return;
+        erase_order_id(pending_order_ids_, sys_id);
+        erase_order_id(working_order_ids_, sys_id);
 
         publish_order_rtn(it->second, '5', "已撤单");
         client_to_sys_.erase(req->client_id);
         tracked_orders_.erase(it);
+    }
+
+    bool try_simple_fill(const TrackedOrder& order, const TickRecord& tick,
+                         int* bid_remain, int* ask_remain, SimpleFill& fill) {
+        const int remain = order.volume_total - order.volume_traded;
+        if (remain <= 0) return false;
+
+        if (order.direction == 'B') {
+            for (int i = 0; i < 5; ++i) {
+                const double ask_px = tick.ask_price[i];
+                int& ask_qty = ask_remain[i];
+                if (ask_px <= 0.0 || ask_qty <= 0) continue;
+                if (!order.is_market && order.limit_price < ask_px) break;
+
+                fill.price = ask_px;
+                fill.qty = std::min(remain, ask_qty);
+                ask_qty -= fill.qty;
+                return fill.qty > 0;
+            }
+            return false;
+        }
+
+        if (order.direction == 'S') {
+            for (int i = 0; i < 5; ++i) {
+                const double bid_px = tick.bid_price[i];
+                int& bid_qty = bid_remain[i];
+                if (bid_px <= 0.0 || bid_qty <= 0) continue;
+                if (!order.is_market && order.limit_price > bid_px) break;
+
+                fill.price = bid_px;
+                fill.qty = std::min(remain, bid_qty);
+                bid_qty -= fill.qty;
+                return fill.qty > 0;
+            }
+        }
+        return false;
+    }
+
+    static void erase_order_id(std::vector<uint64_t>& ids, uint64_t id) {
+        ids.erase(std::remove(ids.begin(), ids.end(), id), ids.end());
     }
 
     int process_trade(const TickMatchingEngine::Trade& trade, uint64_t taker_sys_id) {
@@ -283,7 +323,8 @@ private:
     bool debug_ = false;
     size_t max_orders_ = 10000;
 
-    FastHashMap<std::string, std::unique_ptr<TickMatchingEngine>> engines_;
+    std::vector<uint64_t> pending_order_ids_;
+    std::vector<uint64_t> working_order_ids_;
     FastHashMap<uint64_t, TrackedOrder> tracked_orders_;    // order_sys_id → order
     FastHashMap<uint64_t, uint64_t> client_to_sys_;          // client_id → order_sys_id
 
