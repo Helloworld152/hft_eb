@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.13)
 project(Google_BenchMark)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -31,13 +31,25 @@ target_link_libraries(hash_map_benchmark
     benchmark::benchmark_main)
 target_include_directories(hash_map_benchmark PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
+add_executable(function_alloc_benchmark function_alloc_benchmark.cpp)
+target_link_libraries(function_alloc_benchmark
+    PRIVATE
+    Threads::Threads
+    benchmark::benchmark_main)
+
 add_executable(queue_benchmark queue_benchmark.cpp)
 target_link_libraries(queue_benchmark
     PRIVATE
     Threads::Threads
     benchmark::benchmark_main)
-target_include_directories(queue_benchmark PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_compile_definitions(queue_benchmark PRIVATE FOLLY_NO_CONFIG=1)
+target_include_directories(queue_benchmark
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/folly)
 
-add_executable(queue_latency queue_latency.cpp)
-target_link_libraries(queue_latency PRIVATE Threads::Threads)
-target_include_directories(queue_latency PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/queue_latency.cpp)
+    add_executable(queue_latency queue_latency.cpp)
+    target_link_libraries(queue_latency PRIVATE Threads::Threads)
+    target_include_directories(queue_latency PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+endif()

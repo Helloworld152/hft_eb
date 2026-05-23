@@ -112,6 +112,7 @@ class TradeData:
     volume: int
     trade_id: str
     order_ref: str
+    order_sys_id: str
 
     @classmethod
     def from_dict(cls, data):
@@ -123,6 +124,7 @@ class TradeData:
             volume=_to_int(data.get("volume")),
             trade_id=str(data.get("trade_id", "")),
             order_ref=str(data.get("order_ref", "")),
+            order_sys_id=str(data.get("order_sys_id", "")),
         )
 
 

@@ -880,7 +880,7 @@ symbols:
 - zn2701
 - zn2702
 output_path: ../data/
-trading_day: '20260508'
+trading_day: '20260523'
 start_time: 08:50:00
 end_time: 23:40:00
 initial_capacity: 50000000

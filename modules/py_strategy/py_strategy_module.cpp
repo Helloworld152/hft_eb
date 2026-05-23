@@ -1,4 +1,5 @@
 #include "framework.h"
+#include "order_manager.h"
 #include "symbol_manager.h"
 #include <Python.h>
 #include <vector>
@@ -190,8 +191,12 @@ private:
             strncpy(req.account_id, account_id, sizeof(req.account_id) - 1);
         } else if (!mod->default_account_.empty()) {
             strncpy(req.account_id, mod->default_account_.c_str(), sizeof(req.account_id) - 1);
+        } else {
+            strncpy(req.account_id, "SIM", sizeof(req.account_id) - 1);
         }
 
+        req.client_id = OrderIDGenerator::instance().next_id();
+        OrderIDGenerator::instance().next_order_ref(req.order_ref);
         mod->bus_->publish(EVENT_ORDER_REQ, &req);
         Py_RETURN_NONE;
     }
