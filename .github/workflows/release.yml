@@ -30,9 +30,10 @@ jobs:
               # cmake build in standard build/ directory
               cd /io
               mkdir -p build && cd build
-              PATH=/opt/python/cp310-cp310/bin:\$PATH \
-              CMAKE_PREFIX_PATH=/opt/python/cp310-cp310 \
-              cmake -DCMAKE_BUILD_TYPE=Release ..
+              cmake -DCMAKE_BUILD_TYPE=Release \
+                -DPython3_EXECUTABLE=\$PY \
+                -Dpybind11_DIR=\$(\$PY -m pybind11 --cmakedir) \
+                ..
               cmake --build . --parallel \$(nproc)
 
               # wheel packaging (skip cmake, reuse pre-built .so)
