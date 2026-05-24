@@ -41,7 +41,6 @@ jobs:
               HFT_SKIP_CMAKE=1 \$PY setup.py bdist_wheel
 
               auditwheel repair \
-                --plat manylinux_2_28_x86_64 \
                 hft_backtest/dist/hft_backtest-*.whl \
                 -w wheelhouse/
             "

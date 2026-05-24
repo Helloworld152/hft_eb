@@ -87,6 +87,12 @@ class build_ext(_build_ext):
     def run(self):
         _stage_so_files(self.build_lib)
 
+    def get_outputs(self):
+        tgt = pathlib.Path(self.build_lib)
+        if tgt.exists():
+            return [str(p) for p in tgt.rglob("*.so*")]
+        return []
+
 
 class build_py(_build_py):
     def run(self):
