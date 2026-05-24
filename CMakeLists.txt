@@ -13,8 +13,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     # 基础优化级别（Release 模式默认 -O3）
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
     
-    # 架构特定优化：针对当前 CPU 优化（重要：提升 10-20%）
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=native -mtune=native")
+    # 架构特定优化（wheel 分发时需关闭以保持可移植性）
     
     # 链接时优化（LTO）：跨模块优化（重要：提升 5-15%，但编译慢）
     # 注意：LTO 会增加编译时间，但能显著提升性能
@@ -84,18 +83,21 @@ endfunction()
 
 # Dependencies
 find_package(Threads REQUIRED)
-if(DEFINED Python3_LIBRARY AND DEFINED Python3_INCLUDE_DIR)
-  # setup.py: paths provided, bypass Development.Module
+if(DEFINED Python3_LIBRARY AND DEFINED Python3_INCLUDE_DIR AND NOT Python3_LIBRARY STREQUAL "")
+  # setup.py: explicit paths provided
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
   set(Python3_INCLUDE_DIRS "${Python3_INCLUDE_DIR}")
   set(Python3_LIBRARIES "${Python3_LIBRARY}")
   if(NOT TARGET Python3::Module)
-    add_library(Python3::Module SHARED IMPORTED)
+    if(Python3_LIBRARY MATCHES "\.a$")
+      add_library(Python3::Module STATIC IMPORTED)
+    else()
+      add_library(Python3::Module SHARED IMPORTED)
+    endif()
     set_target_properties(Python3::Module PROPERTIES
       IMPORTED_LOCATION "${Python3_LIBRARY}"
       INTERFACE_INCLUDE_DIRECTORIES "${Python3_INCLUDE_DIRS}")
   endif()
-  # pybind11 需要 python3_add_library，手动定义
   function(python3_add_library _name)
     cmake_parse_arguments(PARSE_ARGV 1 _args "MODULE;SHARED;STATIC" "" "")
     if(_args_MODULE)
@@ -107,7 +109,28 @@ if(DEFINED Python3_LIBRARY AND DEFINED Python3_INCLUDE_DIR)
     target_link_libraries(${_name} PRIVATE ${Python3_LIBRARIES})
   endfunction()
 else()
-  find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
+  # manylinux / standard path: find Python interpreter, get include dirs from sysconfig
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  execute_process(
+    COMMAND ${Python3_EXECUTABLE} -c "import sysconfig; print(sysconfig.get_path('include'))"
+    OUTPUT_VARIABLE _py_include
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  set(Python3_INCLUDE_DIRS "${_py_include}")
+  if(NOT TARGET Python3::Module)
+    add_library(Python3::Module INTERFACE IMPORTED)
+    target_include_directories(Python3::Module INTERFACE ${Python3_INCLUDE_DIRS})
+  endif()
+  function(python3_add_library _name)
+    cmake_parse_arguments(PARSE_ARGV 1 _args "MODULE;SHARED;STATIC" "" "")
+    if(_args_MODULE)
+      add_library(${_name} MODULE ${_args_UNPARSED_ARGUMENTS})
+    else()
+      add_library(${_name} ${_args_UNPARSED_ARGUMENTS})
+    endif()
+    target_include_directories(${_name} PRIVATE ${Python3_INCLUDE_DIRS})
+    target_link_libraries(${_name} PRIVATE Python3::Module)
+  endfunction()
 endif()
 execute_process(
     COMMAND ${Python3_EXECUTABLE} -m pybind11 --cmakedir
@@ -422,7 +445,7 @@ set_target_properties(hft_engine_lib PROPERTIES
 
 add_executable(hft_engine engine/src/main.cpp)
 target_include_directories(hft_engine PRIVATE include engine/include infra/include)
-target_link_libraries(hft_engine PRIVATE hft_engine_lib hft_logging spdlog::spdlog)
+target_link_libraries(hft_engine PRIVATE hft_engine_lib hft_logging spdlog::spdlog hft_hash_containers)
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
 if(pybind11_FOUND)

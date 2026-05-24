@@ -26,8 +26,7 @@ inline uint64_t local_timestamp_yyyymmddhhmmssmmm() {
 }
 
 // 全字段行情记录，支持深度回测与因子计算
-// 对齐到 64 字节（缓存行），提升缓存性能
-struct alignas(64) TickRecord {
+struct TickRecord {
     // 基础信息
     char symbol[32];
     uint64_t symbol_id;    // Mapped from conf/symbols.txt

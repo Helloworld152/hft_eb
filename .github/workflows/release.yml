@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-wheels:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Build manylinux wheel
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/io \
+            quay.io/pypa/manylinux_2_28_x86_64 \
+            bash -c "
+              set -e
+              PY=/opt/python/cp310-cp310/bin/python
+              yum install -y cmake make gcc-c++
+              \$PY -m pip install setuptools wheel pybind11
+
+              # cmake build in standard build/ directory
+              cd /io
+              mkdir -p build && cd build
+              cmake -DCMAKE_BUILD_TYPE=Release \
+                -DPython3_EXECUTABLE=\$PY \
+                -Dpybind11_DIR=\$(\$PY -m pybind11 --cmakedir) \
+                ..
+              cmake --build . --parallel \$(nproc)
+
+              # wheel packaging (skip cmake, reuse pre-built .so)
+              cd /io
+              HFT_SKIP_CMAKE=1 \$PY setup.py bdist_wheel
+
+              auditwheel repair \
+                hft_backtest/dist/hft_backtest-*.whl \
+                -w wheelhouse/
+            "
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: wheels
+          path: wheelhouse/*.whl
+
+  release:
+    needs: build-wheels
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download wheels
+        uses: actions/download-artifact@v5
+        with:
+          name: wheels
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: '*.whl'

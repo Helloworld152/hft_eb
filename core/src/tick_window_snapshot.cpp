@@ -1,11 +1,26 @@
 #include "tick_window_snapshot.h"
+#include "symbol_manager.h"
 #include <immintrin.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <cstring>
+#include <limits>
 #include <stdexcept>
+
+namespace {
+
+uint32_t tick_window_slot_index(uint64_t symbol_id) {
+    const uint32_t index = SymbolManager::instance().get_index(symbol_id);
+    if (index == std::numeric_limits<uint32_t>::max() ||
+        index >= ShmTickWindowSnapshot::MAX_SYMBOLS) {
+        return std::numeric_limits<uint32_t>::max();
+    }
+    return index;
+}
+
+}  // namespace
 
 ShmTickWindowSnapshot::ShmTickWindowSnapshot(const std::string& shm_name, bool is_writer)
     : is_writer_(is_writer), shm_name_(shm_name) {
@@ -39,10 +54,6 @@ ShmTickWindowSnapshot::ShmTickWindowSnapshot(const std::string& shm_name, bool i
 
     if (is_writer_ && layout_->magic != SHM_MAGIC) {
         std::memset(layout_, 0, shm_size_);
-        for (size_t i = 0; i < SYMBOL_INDEX_SIZE; ++i) {
-            layout_->symbol_index[i].store(-1, std::memory_order_relaxed);
-        }
-        layout_->slot_count.store(0, std::memory_order_relaxed);
         layout_->magic = SHM_MAGIC;
     } else if (!is_writer_ && layout_->magic != SHM_MAGIC) {
         munmap(layout_, shm_size_);
@@ -60,37 +71,12 @@ ShmTickWindowSnapshot::~ShmTickWindowSnapshot() {
     }
 }
 
-int32_t ShmTickWindowSnapshot::get_or_alloc_slot(uint64_t symbol_id) {
-    if (!is_writer_) {
-        return -1;
-    }
-    if (symbol_id < SYMBOL_ID_BASE || symbol_id >= SYMBOL_ID_BASE + SYMBOL_INDEX_SIZE) {
-        return -1;
-    }
-
-    uint32_t idx = static_cast<uint32_t>(symbol_id - SYMBOL_ID_BASE);
-    int32_t target = layout_->symbol_index[idx].load(std::memory_order_acquire);
-    if (target != -1) {
-        return target;
-    }
-
-    int32_t count = layout_->slot_count.load(std::memory_order_relaxed);
-    if (count >= static_cast<int32_t>(MAX_SYMBOLS)) {
-        return -1;
-    }
-
-    layout_->symbol_index[idx].store(count, std::memory_order_release);
-    layout_->slot_count.store(count + 1, std::memory_order_release);
-    layout_->symbols[count].write_seq.store(0, std::memory_order_release);
-    return count;
-}
-
 void ShmTickWindowSnapshot::update(const TickRecord& rec) {
     if (!is_writer_ || !layout_) {
         return;
     }
-    int32_t slot_idx = get_or_alloc_slot(rec.symbol_id);
-    if (slot_idx < 0 || slot_idx >= static_cast<int32_t>(MAX_SYMBOLS)) {
+    const uint32_t slot_idx = tick_window_slot_index(rec.symbol_id);
+    if (slot_idx == std::numeric_limits<uint32_t>::max()) {
         return;
     }
 
@@ -139,13 +125,8 @@ size_t ShmTickWindowSnapshot::read_recent(uint64_t symbol_id, TickRecord* out, s
     if (!layout_ || out == nullptr || max_k == 0) {
         return 0;
     }
-    if (symbol_id < SYMBOL_ID_BASE || symbol_id >= SYMBOL_ID_BASE + SYMBOL_INDEX_SIZE) {
-        return 0;
-    }
-
-    uint32_t idx = static_cast<uint32_t>(symbol_id - SYMBOL_ID_BASE);
-    int32_t slot_idx = layout_->symbol_index[idx].load(std::memory_order_acquire);
-    if (slot_idx < 0 || slot_idx >= static_cast<int32_t>(MAX_SYMBOLS)) {
+    const uint32_t slot_idx = tick_window_slot_index(symbol_id);
+    if (slot_idx == std::numeric_limits<uint32_t>::max()) {
         return 0;
     }
 
@@ -175,10 +156,6 @@ void ShmTickWindowSnapshot::clear() {
     if (!is_writer_ || !layout_) {
         return;
     }
-    for (size_t i = 0; i < SYMBOL_INDEX_SIZE; ++i) {
-        layout_->symbol_index[i].store(-1, std::memory_order_release);
-    }
-    layout_->slot_count.store(0, std::memory_order_release);
     for (size_t i = 0; i < MAX_SYMBOLS; ++i) {
         layout_->symbols[i].write_seq.store(0, std::memory_order_release);
         for (size_t j = 0; j < TICK_WINDOW_SIZE; ++j) {

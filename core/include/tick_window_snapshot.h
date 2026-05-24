@@ -24,29 +24,23 @@ public:
 
 private:
     static constexpr uint64_t SHM_MAGIC = 0x5449434B57494E44ULL; // "TICKWIND"
-    static constexpr uint64_t SYMBOL_ID_BASE = 10000000;
-    static constexpr size_t SYMBOL_INDEX_SIZE = 65536;
 
-    struct alignas(512) TickWindowSlot {
-        std::atomic<uint32_t> seq{0};
-        uint32_t padding{0};
+    struct alignas(64) TickWindowSlot {
+        alignas(64) std::atomic<uint32_t> seq{0};
         TickRecord tick;
     };
 
     struct alignas(64) SymbolTickWindow {
-        std::atomic<uint64_t> write_seq{0};
+        alignas(64) std::atomic<uint64_t> write_seq{0};
         TickWindowSlot slots[TICK_WINDOW_SIZE];
     };
 
     struct ShmLayout {
         uint64_t magic;
-        std::atomic<int32_t> symbol_index[SYMBOL_INDEX_SIZE]; // symbol_id - BASE -> slot_idx
         SymbolTickWindow symbols[MAX_SYMBOLS];
-        std::atomic<int32_t> slot_count;
     };
 
     bool read_slot(const TickWindowSlot& slot, TickRecord& out) const;
-    int32_t get_or_alloc_slot(uint64_t symbol_id);
 
     ShmLayout* layout_ = nullptr;
     bool is_writer_ = false;

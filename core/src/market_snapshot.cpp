@@ -1,12 +1,26 @@
 #include "market_snapshot.h"
+#include "symbol_manager.h"
 #include <immintrin.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <cstring>
+#include <limits>
 #include <stdexcept>
 #include <iostream>
+
+namespace {
+
+uint32_t snapshot_slot_index(uint64_t symbol_id) {
+    const uint32_t index = SymbolManager::instance().get_index(symbol_id);
+    if (index == std::numeric_limits<uint32_t>::max() || index >= MARKET_SNAPSHOT_MAX_SYMBOLS) {
+        return std::numeric_limits<uint32_t>::max();
+    }
+    return index;
+}
+
+}  // namespace
 
 // ==========================================
 // 单例管理
@@ -34,10 +48,10 @@ LocalMarketSnapshot::LocalMarketSnapshot() {
 }
 
 void LocalMarketSnapshot::update(const TickRecord& rec) {
-    uint64_t id = rec.symbol_id;
-    if (id >= MARKET_SNAPSHOT_MAX_SYMBOLS) return;
-    
-    MarketSnapshotSlot& slot = slots_[id];
+    const uint32_t index = snapshot_slot_index(rec.symbol_id);
+    if (index == std::numeric_limits<uint32_t>::max()) return;
+
+    MarketSnapshotSlot& slot = slots_[index];
     uint32_t s = slot.seq.load(std::memory_order_relaxed);
     slot.seq.store(s + 1, std::memory_order_release);
     
@@ -48,9 +62,10 @@ void LocalMarketSnapshot::update(const TickRecord& rec) {
 }
 
 bool LocalMarketSnapshot::get(uint64_t symbol_id, TickRecord& out) const {
-    if (symbol_id >= MARKET_SNAPSHOT_MAX_SYMBOLS) return false;
-    
-    const MarketSnapshotSlot& slot = slots_[symbol_id];
+    const uint32_t index = snapshot_slot_index(symbol_id);
+    if (index == std::numeric_limits<uint32_t>::max()) return false;
+
+    const MarketSnapshotSlot& slot = slots_[index];
     uint32_t s1, s2;
     int retries = 0;
     
@@ -113,9 +128,6 @@ ShmMarketSnapshot::ShmMarketSnapshot(const std::string& shm_name, bool is_writer
 
     if (is_writer && layout_->magic != SHM_MAGIC) {
         std::memset(layout_, 0, shm_size_);
-        for (size_t i = 0; i < SYMBOL_INDEX_SIZE; ++i) {
-            layout_->symbol_index[i] = -1;
-        }
         layout_->magic = SHM_MAGIC;
     }
 }
@@ -131,21 +143,8 @@ ShmMarketSnapshot::~ShmMarketSnapshot() {
 
 void ShmMarketSnapshot::update(const TickRecord& rec) {
     if (!is_writer_) return;
-    uint64_t id = rec.symbol_id;
-    if (id < SYMBOL_ID_BASE || id >= SYMBOL_ID_BASE + SYMBOL_INDEX_SIZE) return;
-
-    uint32_t idx = static_cast<uint32_t>(id - SYMBOL_ID_BASE);
-    int32_t target_idx = layout_->symbol_index[idx];
-    
-    if (target_idx == -1) {
-        // 分配新槽位
-        target_idx = layout_->slot_count.fetch_add(1, std::memory_order_relaxed);
-        if (target_idx >= MARKET_SNAPSHOT_MAX_SYMBOLS) {
-            layout_->slot_count.fetch_sub(1, std::memory_order_relaxed);
-            return; // 满了
-        }
-        layout_->symbol_index[idx] = target_idx;
-    }
+    const uint32_t target_idx = snapshot_slot_index(rec.symbol_id);
+    if (target_idx == std::numeric_limits<uint32_t>::max()) return;
 
     MarketSnapshotSlot& slot = layout_->slots[target_idx];
     uint32_t s = slot.seq.load(std::memory_order_relaxed);
@@ -158,13 +157,9 @@ void ShmMarketSnapshot::update(const TickRecord& rec) {
 }
 
 bool ShmMarketSnapshot::get(uint64_t symbol_id, TickRecord& out) const {
-    if (symbol_id < SYMBOL_ID_BASE || symbol_id >= SYMBOL_ID_BASE + SYMBOL_INDEX_SIZE) return false;
+    const uint32_t target_idx = snapshot_slot_index(symbol_id);
+    if (target_idx == std::numeric_limits<uint32_t>::max()) return false;
 
-    uint32_t idx = static_cast<uint32_t>(symbol_id - SYMBOL_ID_BASE);
-    int32_t target_idx = layout_->symbol_index[idx];
-
-    if (target_idx == -1 || target_idx >= MARKET_SNAPSHOT_MAX_SYMBOLS) return false;
-    
     const MarketSnapshotSlot& slot = layout_->slots[target_idx];
     uint32_t s1, s2;
     int retries = 0;
@@ -190,10 +185,6 @@ bool ShmMarketSnapshot::get(uint64_t symbol_id, TickRecord& out) const {
 
 void ShmMarketSnapshot::clear() {
     if (!is_writer_) return;
-    for (size_t i = 0; i < SYMBOL_INDEX_SIZE; ++i) {
-        layout_->symbol_index[i] = -1;
-    }
-    layout_->slot_count.store(0, std::memory_order_release);
     for (int i = 0; i < MARKET_SNAPSHOT_MAX_SYMBOLS; ++i) {
         layout_->slots[i].seq.store(0, std::memory_order_release);
     }

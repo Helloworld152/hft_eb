@@ -10,7 +10,7 @@
 #endif
 
 struct alignas(64) MarketSnapshotSlot {
-    std::atomic<uint32_t> seq{0};  // even=stable, odd=writing
+    alignas(64) std::atomic<uint32_t> seq{0};  // even=stable, odd=writing
     TickRecord tick;
 };
 
@@ -67,14 +67,9 @@ public:
     void clear() override;
 
 private:
-    static constexpr uint64_t SYMBOL_ID_BASE = 10000000;
-    static constexpr size_t SYMBOL_INDEX_SIZE = 65536;
-
     struct ShmLayout {
         uint64_t magic;
-        int32_t symbol_index[SYMBOL_INDEX_SIZE]; // symbol_id - BASE -> slot_idx
         MarketSnapshotSlot slots[MARKET_SNAPSHOT_MAX_SYMBOLS];
-        std::atomic<int32_t> slot_count;
     };
     ShmLayout* layout_ = nullptr;
     bool is_writer_ = false;
