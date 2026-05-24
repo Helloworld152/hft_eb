@@ -22,10 +22,27 @@ jobs:
             -v ${{ github.workspace }}:/io \
             quay.io/pypa/manylinux_2_28_x86_64 \
             bash -c "
-              yum install -y cmake make gcc-c++ &&
-              /opt/python/cp310-cp310/bin/pip install setuptools wheel pybind11 &&
-              cd /io &&
-              /opt/python/cp310-cp310/bin/python setup.py bdist_wheel &&
+              set -e
+              PY=/opt/python/cp310-cp310/bin/python
+              yum install -y cmake make gcc-c++
+              \$PY -m pip install setuptools wheel pybind11
+
+              # cmake build in standard build/ directory
+              cd /io
+              mkdir -p build && cd build
+              cmake -DCMAKE_BUILD_TYPE=Release \
+                -DPython3_EXECUTABLE=\$PY \
+                -DPython3_ROOT_DIR=\$(dirname \$(dirname \$PY)) \
+                -DPython3_INCLUDE_DIR=\$(\$PY -c 'import sysconfig; print(sysconfig.get_path(\"include\"))') \
+                -DPython3_LIBRARY=\$(\$PY -c 'import sysconfig; import os; d=sysconfig.get_config_var(\"LIBDIR\") or \"\"; n=sysconfig.get_config_var(\"LDLIBRARY\") or sysconfig.get_config_var(\"LIBRARY\") or \"\"; p=os.path.join(d,n) if d and n and os.path.exists(os.path.join(d,n)) else \"\"; print(p)') \
+                -Dpybind11_DIR=\$(\$PY -m pybind11 --cmakedir) \
+                ..
+              cmake --build . --parallel \$(nproc)
+
+              # wheel packaging (skip cmake, reuse pre-built .so)
+              cd /io
+              HFT_SKIP_CMAKE=1 \$PY setup.py bdist_wheel
+
               auditwheel repair \
                 --plat manylinux_2_28_x86_64 \
                 hft_backtest/dist/hft_backtest-*.whl \
