@@ -49,7 +49,9 @@ jobs:
           ccache -s
 
       - name: Python wheel
-        run: python3 setup.py bdist_wheel --no-cmake
+        env:
+          HFT_SKIP_CMAKE: 1
+        run: python3 setup.py bdist_wheel
 
       - name: Install and verify
         run: |
