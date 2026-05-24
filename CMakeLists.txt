@@ -109,8 +109,14 @@ if(DEFINED Python3_LIBRARY AND DEFINED Python3_INCLUDE_DIR AND NOT Python3_LIBRA
     target_link_libraries(${_name} PRIVATE ${Python3_LIBRARIES})
   endfunction()
 else()
-  # manylinux / standard path: let cmake find Python
-  find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+  # manylinux / standard path: find Python interpreter, get include dirs from sysconfig
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  execute_process(
+    COMMAND ${Python3_EXECUTABLE} -c "import sysconfig; print(sysconfig.get_path('include'))"
+    OUTPUT_VARIABLE _py_include
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  set(Python3_INCLUDE_DIRS "${_py_include}")
   if(NOT TARGET Python3::Module)
     add_library(Python3::Module INTERFACE IMPORTED)
     target_include_directories(Python3::Module INTERFACE ${Python3_INCLUDE_DIRS})
