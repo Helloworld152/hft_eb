@@ -89,7 +89,11 @@ if(DEFINED Python3_LIBRARY AND DEFINED Python3_INCLUDE_DIR)
   set(Python3_INCLUDE_DIRS "${Python3_INCLUDE_DIR}")
   set(Python3_LIBRARIES "${Python3_LIBRARY}")
   if(NOT TARGET Python3::Module)
-    add_library(Python3::Module SHARED IMPORTED)
+    if(Python3_LIBRARY MATCHES "\.a$")
+      add_library(Python3::Module STATIC IMPORTED)
+    else()
+      add_library(Python3::Module SHARED IMPORTED)
+    endif()
     set_target_properties(Python3::Module PROPERTIES
       IMPORTED_LOCATION "${Python3_LIBRARY}"
       INTERFACE_INCLUDE_DIRECTORIES "${Python3_INCLUDE_DIRS}")
