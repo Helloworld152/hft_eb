@@ -119,6 +119,7 @@ class build_py(_build_py):
                 "cmake",
                 "--build",
                 str(CMAKE_BUILD_DIR),
+                "--parallel", "2",
                 "--target",
                 "_core",
                 "hft_core",
@@ -128,7 +129,6 @@ class build_py(_build_py):
                 "mod_risk",
                 "mod_sim_trade",
                 "mod_backtest_recorder",
-                "-j2",
             ],
             cwd=ROOT,
         )
