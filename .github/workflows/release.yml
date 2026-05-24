@@ -23,7 +23,7 @@ jobs:
             quay.io/pypa/manylinux_2_28_x86_64 \
             bash -c "
               yum install -y cmake make gcc-c++ &&
-              /opt/python/cp310-cp310/bin/pip install pybind11 &&
+              /opt/python/cp310-cp310/bin/pip install setuptools wheel pybind11 &&
               cd /io &&
               /opt/python/cp310-cp310/bin/python setup.py bdist_wheel &&
               auditwheel repair \
