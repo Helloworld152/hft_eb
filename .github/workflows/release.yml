@@ -30,13 +30,9 @@ jobs:
               # cmake build in standard build/ directory
               cd /io
               mkdir -p build && cd build
-              cmake -DCMAKE_BUILD_TYPE=Release \
-                -DPython3_EXECUTABLE=\$PY \
-                -DPython3_ROOT_DIR=\$(dirname \$(dirname \$PY)) \
-                -DPython3_INCLUDE_DIR=\$(\$PY -c 'import sysconfig; print(sysconfig.get_path(\"include\"))') \
-                -DPython3_LIBRARY=\$(\$PY -c 'import sysconfig; import os; d=sysconfig.get_config_var(\"LIBDIR\") or \"\"; n=sysconfig.get_config_var(\"LDLIBRARY\") or sysconfig.get_config_var(\"LIBRARY\") or \"\"; p=os.path.join(d,n) if d and n and os.path.exists(os.path.join(d,n)) else \"\"; print(p)') \
-                -Dpybind11_DIR=\$(\$PY -m pybind11 --cmakedir) \
-                ..
+              PATH=/opt/python/cp310-cp310/bin:\$PATH \
+              CMAKE_PREFIX_PATH=/opt/python/cp310-cp310 \
+              cmake -DCMAKE_BUILD_TYPE=Release ..
               cmake --build . --parallel \$(nproc)
 
               # wheel packaging (skip cmake, reuse pre-built .so)

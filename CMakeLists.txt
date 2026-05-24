@@ -83,8 +83,8 @@ endfunction()
 
 # Dependencies
 find_package(Threads REQUIRED)
-if(DEFINED Python3_LIBRARY AND DEFINED Python3_INCLUDE_DIR)
-  # setup.py: paths provided, bypass Development.Module
+if(DEFINED Python3_LIBRARY AND DEFINED Python3_INCLUDE_DIR AND NOT Python3_LIBRARY STREQUAL "")
+  # setup.py: explicit paths provided
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
   set(Python3_INCLUDE_DIRS "${Python3_INCLUDE_DIR}")
   set(Python3_LIBRARIES "${Python3_LIBRARY}")
@@ -98,7 +98,6 @@ if(DEFINED Python3_LIBRARY AND DEFINED Python3_INCLUDE_DIR)
       IMPORTED_LOCATION "${Python3_LIBRARY}"
       INTERFACE_INCLUDE_DIRECTORIES "${Python3_INCLUDE_DIRS}")
   endif()
-  # pybind11 需要 python3_add_library，手动定义
   function(python3_add_library _name)
     cmake_parse_arguments(PARSE_ARGV 1 _args "MODULE;SHARED;STATIC" "" "")
     if(_args_MODULE)
@@ -110,7 +109,12 @@ if(DEFINED Python3_LIBRARY AND DEFINED Python3_INCLUDE_DIR)
     target_link_libraries(${_name} PRIVATE ${Python3_LIBRARIES})
   endfunction()
 else()
-  find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
+  # manylinux / standard path: let cmake find Python
+  find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+  if(NOT TARGET Python3::Module)
+    add_library(Python3::Module INTERFACE IMPORTED)
+    target_include_directories(Python3::Module INTERFACE ${Python3_INCLUDE_DIRS})
+  endif()
 endif()
 execute_process(
     COMMAND ${Python3_EXECUTABLE} -m pybind11 --cmakedir
