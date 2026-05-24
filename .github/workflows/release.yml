@@ -10,28 +10,27 @@ env:
 jobs:
   build-wheels:
     runs-on: ubuntu-24.04
-    container: quay.io/pypa/manylinux_2_28_x86_64
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
           submodules: recursive
 
-      - name: Install build deps
+      - name: Build manylinux wheel
         run: |
-          yum install -y cmake make gcc-c++
-          /opt/python/cp310-cp310/bin/pip install pybind11
-
-      - name: Build wheel
-        run: |
-          /opt/python/cp310-cp310/bin/python setup.py bdist_wheel
-
-      - name: Repair wheel
-        run: |
-          auditwheel repair \
-            --plat manylinux_2_28_x86_64 \
-            hft_backtest/dist/hft_backtest-*.whl \
-            -w wheelhouse/
+          docker run --rm \
+            -v ${{ github.workspace }}:/io \
+            quay.io/pypa/manylinux_2_28_x86_64 \
+            bash -c "
+              yum install -y cmake make gcc-c++ &&
+              /opt/python/cp310-cp310/bin/pip install pybind11 &&
+              cd /io &&
+              /opt/python/cp310-cp310/bin/python setup.py bdist_wheel &&
+              auditwheel repair \
+                --plat manylinux_2_28_x86_64 \
+                hft_backtest/dist/hft_backtest-*.whl \
+                -w wheelhouse/
+            "
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v5
