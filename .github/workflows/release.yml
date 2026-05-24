@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-wheels:
+    runs-on: ubuntu-24.04
+    container: quay.io/pypa/manylinux_2_28_x86_64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Install build deps
+        run: |
+          yum install -y cmake make gcc-c++
+          /opt/python/cp310-cp310/bin/pip install pybind11
+
+      - name: Build wheel
+        run: |
+          /opt/python/cp310-cp310/bin/python setup.py bdist_wheel
+
+      - name: Repair wheel
+        run: |
+          auditwheel repair \
+            --plat manylinux_2_28_x86_64 \
+            hft_backtest/dist/hft_backtest-*.whl \
+            -w wheelhouse/
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: wheels
+          path: wheelhouse/*.whl
+
+  release:
+    needs: build-wheels
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download wheels
+        uses: actions/download-artifact@v5
+        with:
+          name: wheels
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: '*.whl'
