@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ runner.os }}-${{ github.ref }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ github.ref }}-
+            ccache-${{ runner.os }}-
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            cmake build-essential ccache \
+            python3 python3-dev python3-pip \
+            libarrow-dev libparquet-dev
+
+      - name: Install pybind11
+        run: pip install pybind11
+
+      - name: C++ Debug build
+        run: |
+          ccache -z
+          mkdir -p build && cd build
+          cmake -DCMAKE_BUILD_TYPE=Debug \
+                -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+                -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+                ..
+          make -j$(nproc)
+          ccache -s
+
+      - name: Python wheel build
+        run: python3 setup.py bdist_wheel
+
+      - name: Install and verify
+        run: |
+          pip install --force-reinstall hft_backtest/dist/hft_backtest-*.whl
+          python3 -c "import hft_backtest; print('hft_backtest version:', hft_backtest.__version__)"
+
+      - name: Rust build
+        run: |
+          cd rust_tools
+          cargo build --release
