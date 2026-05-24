@@ -5,7 +5,7 @@ import subprocess
 import sys
 import sysconfig
 
-from setuptools import find_packages, setup
+from setuptools import Extension, find_packages, setup
 from setuptools.command.build_py import build_py as _build_py
 from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
 
@@ -162,6 +162,7 @@ setup(
     version=version_ns["__version__"],
     description="Python backtest package powered by hft_eb engine libraries",
     author="HFT Team",
+    ext_modules=[Extension("hft_backtest._core", [])],
     packages=find_packages(include=["hft_backtest", "hft_backtest.*"]),
     include_package_data=True,
     package_data={
