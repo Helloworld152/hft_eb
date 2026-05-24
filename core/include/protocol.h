@@ -1,6 +1,29 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
+#include <cstdlib>
+#include <ctime>
+
+inline uint64_t local_timestamp_yyyymmddhhmmssmmm() {
+    using namespace std::chrono;
+
+    const auto now = system_clock::now();
+    const auto ms = duration_cast<milliseconds>(now.time_since_epoch()) % 1000;
+    const std::time_t now_time = system_clock::to_time_t(now);
+
+    std::tm local_tm{};
+    localtime_r(&now_time, &local_tm);
+
+    uint64_t ts = static_cast<uint64_t>(local_tm.tm_year + 1900);
+    ts = ts * 100 + static_cast<uint64_t>(local_tm.tm_mon + 1);
+    ts = ts * 100 + static_cast<uint64_t>(local_tm.tm_mday);
+    ts = ts * 100 + static_cast<uint64_t>(local_tm.tm_hour);
+    ts = ts * 100 + static_cast<uint64_t>(local_tm.tm_min);
+    ts = ts * 100 + static_cast<uint64_t>(local_tm.tm_sec);
+    ts = ts * 1000 + static_cast<uint64_t>(ms.count());
+    return ts;
+}
 
 // 全字段行情记录，支持深度回测与因子计算
 // 对齐到 64 字节（缓存行），提升缓存性能
@@ -102,6 +125,8 @@ struct OrderRtn {
     double limit_price;
     int volume_total;    // 报单总量
     int volume_traded;   // 已成交量
+    uint64_t insert_time; // 本地插入时间 YYYYMMDDHHMMSSmmm
+    uint64_t update_time; // 本地更新时间 YYYYMMDDHHMMSSmmm
     char status;         // '0':全部成交, '1':部分成交, '3':未成交, '5':已退单
     char status_msg[81];
 };
@@ -117,7 +142,9 @@ struct TradeRtn {
     char offset_flag;    // 'O'/'C'/'T'
     double price;
     int volume;
+    uint64_t trade_time; // 本地成交时间 YYYYMMDDHHMMSSmmm
     char trade_id[21];
+    char liquidity_role; // 'M' = maker, 'T' = taker
     char order_ref[13];
     char order_sys_id[21]; // 交易所系统 ID
 };

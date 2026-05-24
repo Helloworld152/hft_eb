@@ -118,8 +118,8 @@ self.cover(price, volume, symbol=None)   # 买入平仓
 
 - `TickData` — symbol, last_price, volume, turnover, open_interest, trading_day, update_time
 - `BarData` — symbol, open/high/low/close, volume, turnover, interval
-- `OrderData` — symbol, direction, offset, price, volume_total, volume_traded, status
-- `TradeData` — symbol, direction, offset, price, volume, trade_id
+- `OrderData` — symbol, direction, offset, price, volume_total, volume_traded, insert_time, update_time, status
+- `TradeData` — symbol, direction, offset, price, volume, trade_time, trade_id, liquidity_role(`M`/`T`)
 - `AccountData` — account_id, balance, available, margin, close_pnl, position_pnl
 
 ### BacktestResult

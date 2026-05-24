@@ -50,7 +50,12 @@ def _clean_package_artifacts():
 
 
 def _clean_packaging_workdirs():
-    for path in (CMAKE_BUILD_DIR, SETUPTOOLS_BUILD_DIR, PACKAGE_WORK_DIR / "egg-info"):
+    for path in (
+        CMAKE_BUILD_DIR,
+        SETUPTOOLS_BUILD_DIR,
+        PACKAGE_WORK_DIR / "egg-info",
+        ROOT / "hft_backtest.egg-info",
+    ):
         if path.exists():
             shutil.rmtree(path)
     if PACKAGE_WORK_DIR.exists():

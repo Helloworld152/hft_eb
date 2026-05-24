@@ -6,6 +6,9 @@ class MyStrategy(BaseStrategy):
         self.bought = False
         self.order_count = 0
         self.trade_count = 0
+        self.buy_price = 991.28
+        self.sell_price = 991.38
+        self.volume = 5
 
     def on_init(self):
         self.write_log(f"策略初始化, vt_symbol={self.vt_symbol}")
@@ -19,14 +22,14 @@ class MyStrategy(BaseStrategy):
 
         if not self.bought and tick.last_price <= 991.3:
             self.order_count += 1
-            self.write_log(f"[下单#{self.order_count}] BUY @{tick.last_price} vol=1")
-            self.buy(price=tick.last_price, volume=1)
+            self.write_log(f"[下单#{self.order_count}] BUY @{self.buy_price} vol={self.volume}")
+            self.buy(price=self.buy_price, volume=self.volume)
             self.bought = True
 
         elif self.bought and tick.last_price >= 991.35:
             self.order_count += 1
-            self.write_log(f"[下单#{self.order_count}] SELL @{tick.last_price} vol=1")
-            self.sell(price=tick.last_price, volume=1)
+            self.write_log(f"[下单#{self.order_count}] SELL @{self.sell_price} vol={self.volume}    ")
+            self.sell(price=self.sell_price, volume=self.volume)
             self.bought = False
 
     def on_order(self, order):

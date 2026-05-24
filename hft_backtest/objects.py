@@ -84,6 +84,8 @@ class OrderData:
     price: float
     volume_total: int
     volume_traded: int
+    insert_time: int
+    update_time: int
     status: str
     order_ref: str
     order_sys_id: str
@@ -97,6 +99,8 @@ class OrderData:
             price=_to_float(data.get("limit_price")),
             volume_total=_to_int(data.get("volume_total")),
             volume_traded=_to_int(data.get("volume_traded")),
+            insert_time=_to_int(data.get("insert_time")),
+            update_time=_to_int(data.get("update_time")),
             status=str(data.get("status", "")),
             order_ref=str(data.get("order_ref", "")),
             order_sys_id=str(data.get("order_sys_id", "")),
@@ -110,7 +114,9 @@ class TradeData:
     offset: str
     price: float
     volume: int
+    trade_time: int
     trade_id: str
+    liquidity_role: str
     order_ref: str
     order_sys_id: str
 
@@ -122,7 +128,9 @@ class TradeData:
             offset=str(data.get("offset_flag", "")),
             price=_to_float(data.get("price")),
             volume=_to_int(data.get("volume")),
+            trade_time=_to_int(data.get("trade_time")),
             trade_id=str(data.get("trade_id", "")),
+            liquidity_role=str(data.get("liquidity_role", "")),
             order_ref=str(data.get("order_ref", "")),
             order_sys_id=str(data.get("order_sys_id", "")),
         )

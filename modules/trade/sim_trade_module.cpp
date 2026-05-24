@@ -51,11 +51,14 @@ private:
         int volume_total = 0;
         int volume_traded = 0;
         bool is_market = false;
+        bool has_rested = false;
+        uint64_t insert_time = 0;
     };
 
     struct SimpleFill {
         double price = 0.0;
         int qty = 0;
+        char liquidity_role = 0;
     };
 
     // ======================================================================
@@ -84,6 +87,7 @@ private:
         tracked.limit_price = req->price;
         tracked.volume_total = req->volume;
         tracked.is_market = (req->price <= 0.0);
+        tracked.insert_time = local_timestamp_yyyymmddhhmmssmmm();
 
         tracked_orders_[sys_id] = tracked;
         client_to_sys_[req->client_id] = sys_id;
@@ -123,10 +127,12 @@ private:
                 trade.maker_id = order.order_sys_id;
                 trade.price = fill.price;
                 trade.qty = fill.qty;
-                process_trade(trade, 0);
+                process_trade(trade, 0, fill.liquidity_role);
             }
 
-            if (tracked_orders_.find(sys_id) != tracked_orders_.end()) {
+            auto tracked_it = tracked_orders_.find(sys_id);
+            if (tracked_it != tracked_orders_.end()) {
+                tracked_it->second.has_rested = true;
                 still_working.push_back(sys_id);
             }
         }
@@ -168,7 +174,8 @@ private:
                 if (ask_px <= 0.0 || ask_qty <= 0) continue;
                 if (!order.is_market && order.limit_price < ask_px) break;
 
-                fill.price = ask_px;
+                fill.liquidity_role = (order.is_market || !order.has_rested) ? 'T' : 'M';
+                fill.price = (fill.liquidity_role == 'T') ? ask_px : order.limit_price;
                 fill.qty = std::min(remain, ask_qty);
                 ask_qty -= fill.qty;
                 return fill.qty > 0;
@@ -183,7 +190,8 @@ private:
                 if (bid_px <= 0.0 || bid_qty <= 0) continue;
                 if (!order.is_market && order.limit_price > bid_px) break;
 
-                fill.price = bid_px;
+                fill.liquidity_role = (order.is_market || !order.has_rested) ? 'T' : 'M';
+                fill.price = (fill.liquidity_role == 'T') ? bid_px : order.limit_price;
                 fill.qty = std::min(remain, bid_qty);
                 bid_qty -= fill.qty;
                 return fill.qty > 0;
@@ -196,7 +204,7 @@ private:
         ids.erase(std::remove(ids.begin(), ids.end(), id), ids.end());
     }
 
-    int process_trade(const TickMatchingEngine::Trade& trade, uint64_t taker_sys_id) {
+    int process_trade(const TickMatchingEngine::Trade& trade, uint64_t taker_sys_id, char liquidity_role) {
         int related_qty = 0;
         auto process_side = [&](uint64_t sid) {
             if (sid == 0) return;
@@ -204,7 +212,7 @@ private:
             if (it == tracked_orders_.end()) return;
             auto& o = it->second;
             o.volume_traded += trade.qty;
-            publish_trade_rtn(o, trade.price, trade.qty);
+            publish_trade_rtn(o, trade.price, trade.qty, liquidity_role);
 
             if (o.volume_traded >= o.volume_total) {
                 publish_order_rtn(o, '0');
@@ -226,6 +234,9 @@ private:
 
     void publish_order_rtn(const TrackedOrder& order, char status, const char* msg = nullptr) {
         OrderRtn rtn{};
+        const uint64_t now_ts = (status == '3' && order.insert_time != 0)
+            ? order.insert_time
+            : local_timestamp_yyyymmddhhmmssmmm();
         rtn.client_id = order.client_id;
         std::strncpy(rtn.account_id, order.account_id, sizeof(rtn.account_id) - 1);
         std::strncpy(rtn.exchange_id, "SIM", sizeof(rtn.exchange_id) - 1);
@@ -236,6 +247,8 @@ private:
         rtn.limit_price = order.limit_price;
         rtn.volume_total = order.volume_total;
         rtn.volume_traded = order.volume_traded;
+        rtn.insert_time = order.insert_time;
+        rtn.update_time = now_ts;
         rtn.status = status;
         format_sys_id_str(order.order_sys_id, rtn.order_sys_id, sizeof(rtn.order_sys_id));
         if (msg) std::strncpy(rtn.status_msg, msg, sizeof(rtn.status_msg) - 1);
@@ -250,7 +263,7 @@ private:
         bus_->publish(EVENT_RTN_ORDER, &rtn);
     }
 
-    void publish_trade_rtn(const TrackedOrder& order, double price, int qty) {
+    void publish_trade_rtn(const TrackedOrder& order, double price, int qty, char liquidity_role) {
         TradeRtn rtn{};
         rtn.client_id = order.client_id;
         std::strncpy(rtn.account_id, order.account_id, sizeof(rtn.account_id) - 1);
@@ -261,8 +274,10 @@ private:
         rtn.offset_flag = order.offset_flag;
         rtn.price = price;
         rtn.volume = qty;
+        rtn.trade_time = local_timestamp_yyyymmddhhmmssmmm();
         format_sys_id_str(order.order_sys_id, rtn.order_sys_id, sizeof(rtn.order_sys_id));
         format_trade_id(rtn.trade_id, sizeof(rtn.trade_id));
+        rtn.liquidity_role = liquidity_role;
 
         const auto& core = core::CoreServicesRegistry::get();
         if (core.order_service) core.order_service->enqueue_trade_rtn(rtn);

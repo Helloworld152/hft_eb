@@ -456,6 +456,8 @@ private:
         dict_set_double(d, "limit_price", rtn->limit_price);
         dict_set_long(d, "volume_total", rtn->volume_total);
         dict_set_long(d, "volume_traded", rtn->volume_traded);
+        dict_set_long(d, "insert_time", static_cast<long long>(rtn->insert_time));
+        dict_set_long(d, "update_time", static_cast<long long>(rtn->update_time));
         dict_set_str(d, "status", std::string(1, rtn->status).c_str());
         dict_set_str(d, "status_msg", rtn->status_msg);
         PyObject* ret = PyObject_CallFunctionObjArgs(py_on_order_, d, nullptr);
@@ -481,7 +483,9 @@ private:
         dict_set_str(d, "offset_flag", std::string(1, rtn->offset_flag).c_str());
         dict_set_double(d, "price", rtn->price);
         dict_set_long(d, "volume", rtn->volume);
+        dict_set_long(d, "trade_time", static_cast<long long>(rtn->trade_time));
         dict_set_str(d, "trade_id", rtn->trade_id);
+        dict_set_str(d, "liquidity_role", std::string(1, rtn->liquidity_role).c_str());
         dict_set_str(d, "order_ref", rtn->order_ref);
         dict_set_str(d, "order_sys_id", rtn->order_sys_id);
         PyObject* ret = PyObject_CallFunctionObjArgs(py_on_trade_, d, nullptr);
