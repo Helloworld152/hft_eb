@@ -6,6 +6,7 @@ import sys
 import sysconfig
 
 from setuptools import Extension, find_packages, setup
+from setuptools.command.build_ext import build_ext as _build_ext
 from setuptools.command.build_py import build_py as _build_py
 from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
 
@@ -62,25 +63,29 @@ def _clean_packaging_workdirs():
         shutil.rmtree(PACKAGE_WORK_DIR, ignore_errors=True)
 
 
-def _stage_package_artifacts(build_lib):
-    build_package_dir = pathlib.Path(build_lib) / "hft_backtest"
-    build_package_dir.mkdir(parents=True, exist_ok=True)
+def _stage_so_files(target_dir):
+    tgt = pathlib.Path(target_dir) / "hft_backtest"
+    tgt.mkdir(parents=True, exist_ok=True)
 
     for path in PACKAGE_DIR.glob("_core*.so"):
-        shutil.copy2(path, build_package_dir / path.name)
+        shutil.copy2(path, tgt / path.name)
 
     source_lib_dir = PACKAGE_DIR / "lib"
     if source_lib_dir.exists():
-        target_lib_dir = build_package_dir / "lib"
-        target_lib_dir.mkdir(parents=True, exist_ok=True)
+        tgt_lib = tgt / "lib"
+        tgt_lib.mkdir(parents=True, exist_ok=True)
         for path in source_lib_dir.glob("*.so*"):
             if path.is_symlink():
                 link_target = os.readlink(path)
-                target_path = target_lib_dir / path.name
-                target_path.unlink(missing_ok=True)
-                os.symlink(link_target, target_path)
+                (tgt_lib / path.name).unlink(missing_ok=True)
+                os.symlink(link_target, tgt_lib / path.name)
             else:
-                shutil.copy2(path, target_lib_dir / path.name)
+                shutil.copy2(path, tgt_lib / path.name)
+
+
+class build_ext(_build_ext):
+    def run(self):
+        _stage_so_files(self.build_lib)
 
 
 class build_py(_build_py):
@@ -88,7 +93,6 @@ class build_py(_build_py):
         if not os.environ.get("HFT_SKIP_CMAKE"):
             self._build_native()
         super().run()
-        _stage_package_artifacts(self.build_lib)
 
     def _build_native(self):
         import pybind11
@@ -175,7 +179,7 @@ setup(
         ]
     },
     python_requires=">=3.10",
-    cmdclass={"build_py": build_py, "bdist_wheel": bdist_wheel},
+    cmdclass={"build_ext": build_ext, "build_py": build_py, "bdist_wheel": bdist_wheel},
     options={"build": {"build_base": str(SETUPTOOLS_BUILD_DIR)}},
     classifiers=[
         "Development Status :: 3 - Alpha",
