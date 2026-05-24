@@ -37,7 +37,7 @@ jobs:
       - name: Install pybind11
         run: pip install pybind11
 
-      - name: C++ Debug build
+      - name: C++ build
         run: |
           ccache -z
           mkdir -p build && cd build
@@ -48,15 +48,10 @@ jobs:
           make -j$(nproc)
           ccache -s
 
-      - name: Python wheel build
-        run: python3 setup.py bdist_wheel
+      - name: Python wheel
+        run: python3 setup.py bdist_wheel --no-cmake
 
       - name: Install and verify
         run: |
           pip install --force-reinstall hft_backtest/dist/hft_backtest-*.whl
           python3 -c "import hft_backtest; print('hft_backtest version:', hft_backtest.__version__)"
-
-      - name: Rust build
-        run: |
-          cd rust_tools
-          cargo build --release

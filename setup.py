@@ -84,8 +84,17 @@ def _stage_package_artifacts(build_lib):
 
 
 class build_py(_build_py):
+    user_options = _build_py.user_options + [
+        ('no-cmake', None, 'skip CMake build, reuse pre-built .so files'),
+    ]
+
+    def initialize_options(self):
+        super().initialize_options()
+        self.no_cmake = False
+
     def run(self):
-        self._build_native()
+        if not self.no_cmake:
+            self._build_native()
         super().run()
         _stage_package_artifacts(self.build_lib)
 
