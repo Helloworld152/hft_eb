@@ -1,4 +1,4 @@
-__version__ = "0.1.0"
+__version__ = "0.1.12"
 
 from .engine import BacktestEngine
 from .objects import AccountData, BacktestResult, BarData, OrderData, TickData, TradeData

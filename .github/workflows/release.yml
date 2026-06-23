@@ -20,7 +20,7 @@ jobs:
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/io \
-            quay.io/pypa/manylinux_2_28_x86_64 \
+            quay.io/pypa/manylinux2014_x86_64 \
             bash -c "
               set -e
               PY=/opt/python/cp310-cp310/bin/python
